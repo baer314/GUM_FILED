@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">검 컨트롤러</string>
+
+    <string name="hint_server">서버 주소 (예: 192.168.0.5:8080)</string>
+    <string name="hint_pin">방 PIN</string>
+    <string name="btn_scan">QR 스캔</string>
+    <string name="btn_join">입장</string>
+    <string name="btn_sensor_test">센서 테스트 (서버 없이)</string>
+    <string name="btn_leave">나가기</string>
+    <string name="btn_confirm">확인</string>
+
+    <string name="waiting_title">게임 시작 대기 중</string>
+    <string name="calib_title">화면 중앙을 향하고\n확인 버튼을 누르세요</string>
+    <string name="play_hint">볼륨 상: 방어 / 볼륨 하: 강타 충전</string>
+</resources>
