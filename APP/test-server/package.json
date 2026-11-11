@@ -1,0 +1,14 @@
+{
+  "name": "gum-app-test-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "앱 단독 테스트용 가짜 서버 (실제 서버는 PC/Server)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "qrcode-terminal": "^0.12.0",
+    "ws": "^8.18.0"
+  }
+}
