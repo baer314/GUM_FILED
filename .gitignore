@@ -1,0 +1,27 @@
+node_modules/
+.npm-cache/
+.tools/
+
+# Local environment, tunnel credentials and runtime files
+.env
+.env.*
+!.env.example
+.cloudflared/
+*.log
+*.pid
+
+# Generated test exports (source and package-lock.json remain tracked)
+gum-transport-test*.json
+통신_*시험.json
+coverage/
+
+# Android machine settings and generated packages
+.gradle/
+local.properties
+build/
+*.apk
+*.aab
+
+# Windows metadata
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GUM 통신 시험 · PC</title><link rel="stylesheet" href="/style.css">
+<main>
+  <p class="eyebrow">GUM FIELD · 통신 개발</p><h1>PC 수신 시험</h1>
+  <p>테스트용 컨트롤러 두 개를 연결해 입력을 구분해서 확인합니다.</p>
+  <form id="room-form"><label>서버 주소<input id="server-url" required></label><button id="create">방 생성</button></form>
+  <section><h2>대기방</h2><p id="room-status" role="status">방을 만들어 주세요.</p>
+    <p class="pin" id="pin">—</p><a id="controller-link" hidden target="_blank" rel="noopener">테스트 컨트롤러 열기</a>
+    <label>QR에 넣을 접속 정보<textarea id="qr-data" rows="3" readonly></textarea></label>
+    <div class="actions"><button id="start" disabled>게임 시작 신호</button><button id="close" type="button">방 닫기</button></div>
+  </section>
+  <div id="players" class="players"></div>
+  <section><h2>시험 기록</h2><p>화면은 초당 한 번 갱신합니다. 컨트롤러는 가짜 센서 데이터를 전송합니다.</p>
+    <p id="calibration">영점 확인 대기</p><button id="export">시험 결과 내려받기</button><pre id="events" aria-live="polite"></pre>
+  </section>
+</main><script src="/protocol.js"></script><script src="/network.js"></script><script src="/pc.js"></script>
+</html>
