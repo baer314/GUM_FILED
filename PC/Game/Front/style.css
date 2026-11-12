@@ -1,0 +1,430 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+}
+
+body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  font-family: sans-serif;
+  background-color: #0d1117;
+}
+
+canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1;
+  display: block;
+}
+
+#split-divider {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 4px;
+  height: 100vh;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateX(-50%);
+  z-index: 5;
+  pointer-events: none;
+  display: none;
+}
+
+.hit-flash-overlay {
+  position: absolute;
+  top: 0;
+  width: 50vw;
+  height: 100vh;
+  box-shadow: inset 0 0 50px rgba(239, 68, 68, 0);
+  pointer-events: none;
+  z-index: 6;
+  transition: box-shadow 0.05s ease-out;
+}
+#p1-hit-flash { left: 0; }
+#p2-hit-flash { left: 50vw; }
+.hit-flash-overlay.active {
+  box-shadow: inset 0 0 80px rgba(239, 68, 68, 0.9);
+}
+
+/* =========================================
+   1. 메인 대기실 UI
+   ========================================= */
+#lobby-container {
+  position: absolute;
+  top: 5vh;
+  left: 5vw;
+  width: 90vw;
+  height: 90vh;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  z-index: 10;
+}
+
+.title-box {
+  width: 100%;
+  height: 18%;
+  background-color: #e5989b;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 3rem;
+  font-weight: bold;
+  border-radius: 8px;
+  color: #111;
+}
+
+.content-area {
+  width: 100%;
+  height: 82%;
+  display: flex;
+  gap: 20px;
+}
+
+.player-list-box {
+  flex: 2;
+  background-color: #e5989b;
+  border-radius: 8px;
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+}
+
+.player-card {
+  background-color: rgba(255, 255, 255, 0.5);
+  padding: 20px;
+  border-radius: 8px;
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #222;
+}
+
+.join-sim-btn {
+  align-self: flex-start;
+  padding: 10px 18px;
+  background-color: #457b9d;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.join-sim-btn:hover { background-color: #1d3557; }
+
+.right-side-box {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.start-btn {
+  width: 100%;
+  height: 25%;
+  background-color: #e5989b;
+  border: none;
+  border-radius: 8px;
+  font-size: 2.2rem;
+  font-weight: bold;
+  cursor: pointer;
+  color: #111;
+  transition: background-color 0.2s;
+}
+.start-btn:hover { background-color: #b5838d; }
+
+.qr-box {
+  width: 100%;
+  height: 75%;
+  background-color: #e5989b;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #222;
+  gap: 10px;
+}
+
+.qr-placeholder {
+  width: 164px;
+  height: 164px;
+  background: #ffffff;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 0.9rem;
+  color: #555;
+  border: 2px solid #222;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.qr-placeholder img,
+.qr-placeholder canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+.qr-sub-url {
+  font-size: 0.85rem;
+  font-weight: normal;
+  color: #333;
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* =========================================
+   2. 영점 조절 오버레이 UI
+   ========================================= */
+#calibration-screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.85);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  z-index: 20;
+  color: white;
+  gap: 20px;
+  text-align: center;
+}
+#calibration-screen h2 { font-size: 2.5rem; color: #ffb703; }
+#calibration-screen p { font-size: 1.4rem; color: #e0e0e0; line-height: 1.6; }
+
+.confirm-btn {
+  margin-top: 15px;
+  padding: 15px 35px;
+  font-size: 1.5rem;
+  font-weight: bold;
+  background-color: #06d6a0;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #111;
+  transition: 0.2s;
+}
+.confirm-btn:hover { background-color: #05b386; transform: scale(1.05); }
+
+/* =========================================
+   3. 1인칭 인게임 HUD
+   ========================================= */
+#game-hud {
+  position: absolute;
+  top: 15px;
+  left: 0;
+  width: 100vw;
+  display: none;
+  justify-content: space-around;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.viewport-label {
+  background: rgba(0, 0, 0, 0.78);
+  color: white;
+  padding: 10px 22px;
+  border-radius: 8px;
+  font-size: 1.2rem;
+  font-weight: bold;
+  border-left: 6px solid #38bdf8;
+  transition: transform 0.1s ease, color 0.15s ease;
+}
+.label-p2 { border-left-color: #f72585; }
+.hp-hit { transform: scale(1.15); color: #ef4444 !important; }
+.status-stun { color: #c084fc !important; border-left-color: #a855f7 !important; }
+
+/* =========================================
+   4. 가상 스마트폰 컨트롤러 시뮬레이터
+   ========================================= */
+#phone-panel {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 265px;
+  height: 405px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 2px solid #38bdf8;
+  border-radius: 16px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 25;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.8);
+  perspective: 750px;
+}
+
+.panel-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #38bdf8;
+  font-size: 12px;
+  font-weight: bold;
+  gap: 4px;
+}
+
+.switch-player-btn {
+  background: #0284c7;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 7px;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.switch-player-btn:hover { background: #0369a1; }
+.calib-btn { background: #0d9488; }
+.calib-btn:hover { background: #0f766e; }
+
+.front-dir-hint {
+  font-size: 11px;
+  color: #fbbf24;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+}
+
+#phone-container {
+  width: 100%;
+  height: 135px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: grab;
+  position: relative;
+}
+#phone-container:active { cursor: grabbing; }
+
+#virtual-phone {
+  width: 72px;
+  height: 130px;
+  background: #1e293b;
+  border: 3px solid #64748b;
+  border-radius: 16px;
+  box-shadow: 10px 15px 30px rgba(0,0,0,0.85);
+  transform-style: preserve-3d;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.phone-side-edge {
+  position: absolute;
+  left: -8px;
+  top: 8px;
+  width: 14px;
+  height: 110px;
+  background: #334155;
+  border: 1px solid #94a3b8;
+  border-radius: 6px;
+  transform: rotateY(-90deg) translateZ(0px);
+  transform-style: preserve-3d;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#virtual-phone .notch {
+  position: absolute;
+  top: 6px;
+  width: 22px;
+  height: 4px;
+  background: #475569;
+  border-radius: 2px;
+}
+
+#virtual-phone .screen {
+  width: 60px;
+  height: 108px;
+  background: #0f172a;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #38bdf8;
+  font-size: 10px;
+  font-weight: bold;
+  gap: 4px;
+}
+
+.vol-btn {
+  position: absolute;
+  left: -8px;
+  width: 6px;
+  background: #f59e0b;
+  border-radius: 3px;
+  box-shadow: -2px 0 8px rgba(245, 158, 11, 0.9);
+}
+.vol-up { top: 28px; height: 16px; }
+.vol-down { top: 50px; height: 16px; }
+
+.btn-row { width: 100%; display: flex; gap: 6px; }
+.action-sim-btn {
+  flex: 1;
+  padding: 8px 4px;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: 0.1s;
+}
+.guard-btn { background: #3b82f6; }
+.guard-btn.active { background: #ef4444; }
+.charge-btn { background: #d97706; }
+.charge-btn.active { background: #f59e0b; color: #111; }
+
+#sensor-readout {
+  width: 100%;
+  background: #0b1120;
+  border-radius: 8px;
+  padding: 7px;
+  color: #94a3b8;
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.4;
+}
+#sensor-readout span { color: #38bdf8; font-weight: bold; }
+
+#test-guide {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85);
+  color: #00f5d4;
+  padding: 8px 18px;
+  border-radius: 20px;
+  font-size: 13px;
+  z-index: 30;
+  pointer-events: none;
+  border: 1px solid #00f5d4;
+  white-space: nowrap;
+}
