@@ -1,19 +1,68 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>모바일 검도 - 1단계 로컬 테스트</title>
+    <title>GUM FIELD - 1단계 모킹(Mock) 테스트 환경</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #eee; }
-        #ui-overlay { position: absolute; top: 20px; left: 20px; z-index: 10; font-family: sans-serif; }
+        body { 
+            margin: 0; overflow: hidden; background-color: #1e272e; 
+            color: #fff; font-family: 'Consolas', 'Malgun Gothic', monospace; 
+            display: flex; flex-direction: column; height: 100vh; 
+        }
+        /* 중앙 3D 뷰어 영역 */
+        #canvas-container { 
+            flex: 1; position: relative; width: 100%; 
+        }
+        #guide-overlay {
+            position: absolute; top: 15px; left: 15px; 
+            background: rgba(0, 0, 0, 0.65); padding: 15px; 
+            border-radius: 8px; border-left: 4px solid #0fbcf9;
+            pointer-events: none; line-height: 1.6; font-size: 14px;
+        }
+        /* 하단 모크 데이터 표시 패널 */
+        #mock-panel { 
+            height: 230px; background: #0f1419; border-top: 2px solid #3c40c6; 
+            padding: 15px 25px; display: flex; gap: 30px; box-sizing: border-box;
+        }
+        .data-box { flex: 1; background: #1e272e; padding: 12px 15px; border-radius: 6px; overflow: hidden; }
+        .data-box h3 { margin: 0 0 10px 0; font-size: 15px; color: #0fbcf9; border-bottom: 1px solid #333; padding-bottom: 5px; }
+        pre { margin: 0; font-size: 13px; color: #0be881; line-height: 1.4; }
+        .status-badge { display: inline-block; padding: 4px 10px; border-radius: 4px; font-weight: bold; background: #3c40c6; color: #fff; }
     </style>
+    <!-- Three.js CDN 로드 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-    <div id="ui-overlay">대기 중...</div>
-    <!-- 이 아래 공간에 향후 Three.js Canvas가 생성됩니다 -->
-    
-    <!-- 스크립트 연결 -->
-    <script src="front.js"></script> 
+
+    <!-- 중앙: 3D 스마트폰 방향 뷰어 -->
+    <div id="canvas-container">
+        <div id="guide-overlay">
+            <strong>🎮 키보드 조작 안내 (모킹 컨트롤러)</strong><br>
+            • <b>방향키 ◀ / ▶</b> : 기울기 Z축 회전 (좌우 기울이기)<br>
+            • <b>방향키 ▲ / ▼</b> : 기울기 Y축 회전 (위아래 기울이기)<br>
+            • <b>[ A ] 키</b> : 볼륨 상 키 (button: 1, 방어)<br>
+            • <b>[ S ] 키</b> : 볼륨 하 키 (button: 2, 강타 충전)<br>
+            • <b>[ D ] 키</b> : 공격 모션 (X축 가속도 증가)<br>
+            • <b>[ Space ]</b> : 자세 초기화 (영점 조절)
+        </div>
+    </div>
+
+    <!-- 하단: 실시간 모크 데이터 출력창 -->
+    <div id="mock-panel">
+        <div class="data-box" style="flex: 0.8;">
+            <h3>판정 및 액션 상태 (Back 연산 결과)</h3>
+            <p>할당 ID : <strong>PLAYER_1</strong></p>
+            <p>현재 상태 : <span id="ui-status" class="status-badge">IDLE (준비)</span></p>
+            <p>버튼 매핑 : <span id="ui-btn">0 (입력 없음)</span></p>
+        </div>
+        <div class="data-box" style="flex: 1.2;">
+            <h3>실시간 수신 패킷 (Mock Sensor Data)</h3>
+            <pre id="ui-json">데이터 수신 대기 중...</pre>
+        </div>
+    </div>
+
+    <!-- Front와 Back 스크립트 분리 로드 -->
+    <script src="front.js"></script>
     <script src="back.js"></script>
 </body>
 </html>
