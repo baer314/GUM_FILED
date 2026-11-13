@@ -137,7 +137,7 @@ function createServer({ transport = 'p2p', publicBaseUrl = '',
       if (transport !== 'relay') { error(ws, 'WRONG_TRANSPORT', '게임 입력은 DataChannel로 보내세요.'); return; }
       if (m.type === 'GAME_START' && isHost) {
         for (const player of room.players.values()) send(player, { type: 'GAME_START' });
-      } else if (!isHost && (protocol.sensor(m) || protocol.calibration(m))) {
+      } else if (!isHost && protocol.sensor(m)) {
         if (m.sender_id !== ws.memberId) { error(ws, 'INVALID_SENDER', '할당된 플레이어 ID를 사용하세요.'); return; }
         send(room.host, m);
       } else { error(ws, 'INVALID_MESSAGE', '이 연결에서 보낼 수 없는 메시지입니다.'); }

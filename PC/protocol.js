@@ -22,12 +22,7 @@
       && [0, 1, 2].includes(m.payload.button);
   }
 
-  function calibration(m) {
-    return record(m) && m.type === 'CALIBRATE_CONFIRM' && playerId(m.sender_id)
-      && (m.button_input === undefined || Number.isInteger(m.button_input));
-  }
-
-  const api = { parse, sensor, calibration, playerId };
+  const api = { parse, sensor, playerId };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GameProtocol = api;
 })(globalThis);

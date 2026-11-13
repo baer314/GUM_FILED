@@ -126,10 +126,6 @@
     $('room-status').textContent = text;
   }
 
-  function renderCalibration(playerId) {
-    $('calibration').textContent = `${playerId} 영점 확인 수신`;
-  }
-
   function setCreateDisabled(disabled) {
     $('create').disabled = disabled;
   }
@@ -190,7 +186,6 @@
     renderQrSvg,
     renderLog,
     renderStatus,
-    renderCalibration,
     setCreateDisabled,
     setStartDisabled,
     resetView,

@@ -16,7 +16,7 @@ function log(text) {
 function status(text) { $('status').textContent = text; log(text); }
 function leave() {
   session++; clearTimeout(timer); timer = null; started = false; paused = false;
-  $('pause').textContent = '시험 송신 일시정지'; $('calibrate').disabled = true;
+  $('pause').textContent = '시험 송신 일시정지';
   const oldWs = ws, oldPc = pc, oldChannel = channel;
   ws = null; pc = null; channel = null; id = null; mode = null; pending = [];
   oldChannel?.close(); oldPc?.close(); if (oldWs && oldWs.readyState < 2) oldWs.close();
@@ -28,12 +28,12 @@ function sendInput(message) {
   if (target.bufferedAmount > 65536) return false;
   target.send(JSON.stringify(message)); return true;
 }
-function stopSending() { clearTimeout(timer); timer = null; started = false; $('calibrate').disabled = true; }
+function stopSending() { clearTimeout(timer); timer = null; started = false; }
 function startSending() {
   if (started) return;
   const rate = Number($('rate').value);
   if (!Number.isFinite(rate) || rate < 1 || rate > 120) { status('송신 목표는 1~120으로 입력하세요.'); return; }
-  started = true; $('calibrate').disabled = false; status(`게임 시작 · ${mode} · 송신 중`);
+  started = true; status(`게임 시작 · ${mode} · 송신 중`);
   const tick = 1000 / rate;
   let next = performance.now() + tick;
   // setTimeout follows a monotonic target; do not burst old samples after background throttling.
@@ -115,10 +115,6 @@ $('join-form').onsubmit = (event) => {
   } catch (error) { leave(); status(error.message); }
 };
 $('leave').onclick = () => { leave(); status('방에서 나왔습니다.'); };
-$('calibrate').onclick = () => {
-  if (sendInput({ type: 'CALIBRATE_CONFIRM', sender_id: id, button_input: 0 })) log('영점 확인 전송');
-  else status('영점 확인을 보내지 못했습니다. 연결을 확인하세요.');
-};
 $('pause').onclick = () => { paused = !paused; $('pause').textContent = paused ? '시험 송신 재개' : '시험 송신 일시정지'; };
 setInterval(() => { $('counts').textContent = `송신 ${sent} · 건너뜀 ${skipped} · 다음 순번 ${seq}`; }, 1000);
 window.addEventListener('pagehide', leave);

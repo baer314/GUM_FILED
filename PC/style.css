@@ -8,7 +8,6 @@
 .participants-header h2,.participant-count{margin:0}
 .participant-count{font-weight:700;color:#205d48}
 .lobby-participants .players{flex:1;grid-template-columns:1fr;align-content:start}
-.calibration-status{margin:12px 0 0;font-size:.9rem;color:#4f7164}
 .lobby-side{display:flex;flex-direction:column;gap:20px}
 .lobby-start-box,.lobby-qr-box{margin:0}
 .lobby-start-box{display:flex;align-items:center;justify-content:center;padding:18px}

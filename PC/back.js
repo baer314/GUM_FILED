@@ -42,7 +42,6 @@ async function openRoom(event) {
         if (state === 'disconnected' && history.has(id)) history.get(id).state = state;
         log(`${id}: ${state}`); render();
       },
-      onCalibrateConfirm(id) { GameFront.renderCalibration(id); log(`${id}: 영점 확인`); },
       onError(e) { log(`${e.code}: ${e.message}`); },
       onRoomClosed() { GameFront.renderStatus('서버 연결 종료 · 방을 다시 생성해 주세요.'); GameFront.setStartDisabled(true); },
     });

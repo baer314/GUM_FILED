@@ -48,8 +48,7 @@
       peer.count++;
       peer.lastReceivedAt = performance.now(); peer.latest = message;
       emit('onSensorData', peer.id, message.timestamp, message.payload);
-    } else if (P.calibration(message)) emit('onCalibrateConfirm', peer.id);
-    else { peer.invalid++; error('INVALID_INPUT', '센서/영점 확인 형식을 확인하세요.', peer.id); }
+    } else { peer.invalid++; error('INVALID_INPUT', '센서 데이터 형식을 확인하세요.', peer.id); }
   }
   async function addPlayer(id, token) {
     if (!P.playerId(id) || peers.has(id)) throw new Error('중복 또는 잘못된 플레이어 ID');
@@ -124,7 +123,7 @@
             } else if (m.type === 'ERROR') {
               error(m.code, m.message);
               if (!room) { clearRoomTimer(); pendingReject?.(new Error(m.message)); pendingReject = null; }
-            } else if (m.type === 'SENSOR' || m.type === 'CALIBRATE_CONFIRM') {
+            } else if (m.type === 'SENSOR') {
               const peer = peers.get(m.sender_id);
               if (room?.transport !== 'relay') throw new Error('직접 연결 모드에 서버 중계 입력이 도착했습니다.');
               if (peer) receive(peer, m);

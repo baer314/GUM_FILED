@@ -75,8 +75,6 @@ test('relay: both inputs, controls, malformed input and sender spoofing', async 
   one.send(sample('PLAYER_1')); two.send(sample('PLAYER_2'));
   const received = [await f.host.next(), await f.host.next()];
   assert.deepEqual(received.map((m) => m.sender_id).sort(), ['PLAYER_1', 'PLAYER_2']);
-  one.send({ type: 'CALIBRATE_CONFIRM', sender_id: 'PLAYER_1', button_input: 0 });
-  assert.equal((await f.host.next()).type, 'CALIBRATE_CONFIRM');
   one.send(sample('PLAYER_2')); assert.equal((await one.next()).code, 'INVALID_SENDER');
   const bad = sample('PLAYER_1'); bad.payload.rotation_vector.w = null;
   one.send(bad); assert.equal((await one.next()).code, 'INVALID_MESSAGE');
@@ -147,7 +145,6 @@ test('PC module: callbacks, sequence gaps, duplicate rejection and slot reuse', 
   const room = await network.createRoom(f.base.replace('http:', 'ws:') + '/ws', {
     onPlayerState: (id, state) => events.emit(state, id),
     onSensorData: (...args) => events.emit('sensor', args),
-    onCalibrateConfirm: (id) => events.emit('calibration', id),
   });
   const one = await f.client(), readyOne = once(events, 'ready');
   one.send({ type: 'JOIN_ROOM', client_type: 'CONTROLLER', pin: room.room_pin });
@@ -165,8 +162,6 @@ test('PC module: callbacks, sequence gaps, duplicate rejection and slot reuse', 
   assert.equal(stats.count, 2); assert.equal(stats.missing, 2); assert.equal(stats.invalid, 1);
   received = once(events, 'sensor'); two.send(sample('PLAYER_2', 4)); await received;
   assert.equal(network.getStats().find((s) => s.id === 'PLAYER_2').missing, 4);
-  const calibrated = once(events, 'calibration');
-  two.send({ type: 'CALIBRATE_CONFIRM', sender_id: 'PLAYER_2' }); assert.equal((await calibrated)[0], 'PLAYER_2');
   const disconnected = once(events, 'disconnected'); await one.close(); await disconnected;
   assert.equal(network.getStats().length, 1);
   const replacement = await f.client(), readyAgain = once(events, 'ready');
