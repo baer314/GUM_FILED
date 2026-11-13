@@ -117,7 +117,7 @@ test('P2P signaling: role checks, room isolation, trusted sender and candidate r
 test('HTTP allowlist and explicit public QR address', async (t) => {
   const f = await fixture(t, 'relay', { publicBaseUrl: 'https://example.test' });
   assert.deepEqual(JSON.parse(f.room.qr_data), { server_url: 'wss://example.test/ws', pin: f.room.room_pin, transport: 'relay' });
-  for (const file of ['/', '/controller.html', '/protocol.js', '/network.js', '/front.js', '/back.js', '/controller.js', '/style.css', '/health']) {
+  for (const file of ['/', '/controller.html', '/protocol.js', '/network.js', '/front.js', '/inGameFront.js', '/inGameBack.js', '/back.js', '/controller.js', '/style.css', '/health']) {
     const response = await fetch(f.base + file); assert.equal(response.status, 200, file);
   }
   for (const file of ['/server.js', '/package.json', '/README.txt', '/.env', '/..%2fserver.js']) {

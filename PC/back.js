@@ -14,15 +14,23 @@ function log(text) {
 
 function reset() {
   roomInfo = null; startedAt = null; history.clear(); rates.clear(); previousCounts.clear();
+  globalThis.InGameBack?.stop();
   GameFront.resetView();
 }
 
-function render() {
+function syncHistory() {
   const live = GameNetwork.getStats();
   for (const s of live) history.set(s.id, s);
+  return live;
+}
+
+function render() {
+  const live = syncHistory();
   const connectedCount = live.filter((s) => s.state !== 'disconnected').length;
   const canStart = live.some((s) => s.state === 'ready');
-  GameFront.renderPlayers([...history.values()], rates, connectedCount, canStart);
+  const players = [...history.values()];
+  GameFront.renderPlayers(players, rates, connectedCount, canStart);
+  globalThis.InGameBack?.sync(players, rates);
 }
 
 async function openRoom(event) {
@@ -42,6 +50,10 @@ async function openRoom(event) {
         if (state === 'disconnected' && history.has(id)) history.get(id).state = state;
         log(`${id}: ${state}`); render();
       },
+      onSensorData(id, timestamp, payload) {
+        syncHistory();
+        globalThis.InGameBack?.onSensorData(id, timestamp, payload, [...history.values()], rates);
+      },
       onError(e) { log(`${e.code}: ${e.message}`); },
       onRoomClosed() { GameFront.renderStatus('서버 연결 종료 · 방을 다시 생성해 주세요.'); GameFront.setStartDisabled(true); },
     });
@@ -56,6 +68,8 @@ GameFront.bindEvents({
     try {
       const count = GameNetwork.sendGameStart(); startedAt ||= new Date().toISOString();
       log(`게임 시작 신호 → ${count}명`);
+      syncHistory();
+      globalThis.InGameBack?.start([...history.values()], rates);
     } catch (error) { log(error.message); }
   },
   onCloseRoom() {

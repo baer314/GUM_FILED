@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <main class="lobby">
+  <main id="lobby-view" class="lobby">
     <header class="lobby-header">
       <p class="eyebrow">GUM FIELD · MOBILE KUMDO</p>
       <h1 id="title">GUM FIELD</h1>
@@ -56,10 +56,27 @@
       <pre id="events" aria-live="polite"></pre>
     </details>
   </main>
+
+  <section id="ingame-view" class="ingame-view" hidden>
+    <canvas id="ingame-canvas" class="ingame-canvas"></canvas>
+    <aside id="ingame-overlay" class="ingame-overlay" aria-live="polite">
+      <div class="ingame-overlay-header">
+        <div>
+          <p class="ingame-eyebrow">GUM FIELD · IN-GAME MONITOR</p>
+          <h2>실시간 컨트롤러 패킷 정보</h2>
+        </div>
+        <button id="back-to-lobby" type="button" class="overlay-btn">대기방 보기</button>
+      </div>
+      <div id="ingame-packets" class="ingame-packets"></div>
+    </aside>
+  </section>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="/protocol.js"></script>
   <script src="/network.js"></script>
   <script src="/front.js"></script>
+  <script src="/inGameFront.js"></script>
+  <script src="/inGameBack.js"></script>
   <script src="/back.js"></script>
 </body>
 </html>
-

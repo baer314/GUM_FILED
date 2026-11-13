@@ -25,6 +25,7 @@ async function screen() {
     setInterval(callback) { tick = callback; }, setTimeout() {},
     GameNetwork: {
       close() {}, getStats: () => stats.map((s) => ({ ...s })), getConnectionStats: async () => [],
+      sendGameStart: () => stats.filter((s) => s.state === 'ready').length,
       async createRoom(url, callbacks) {
         handlers = callbacks;
         const room = { room_pin: 'ABC234', qr_data: '{}', transport: 'relay' };
@@ -32,13 +33,15 @@ async function screen() {
       }
     } });
   vm.runInContext(readFileSync(require.resolve('../PC/front.js'), 'utf8'), context);
+  vm.runInContext(readFileSync(require.resolve('../PC/inGameFront.js'), 'utf8'), context);
+  vm.runInContext(readFileSync(require.resolve('../PC/inGameBack.js'), 'utf8'), context);
   vm.runInContext(readFileSync(require.resolve('../PC/back.js'), 'utf8'), context);
   await get('room-form').onsubmit({ preventDefault() {} });
   function player(id) {
     const value = { id, state: 'ready', count: 0, missing: 0, invalid: 0, latest: null };
     stats.push(value); handlers.onPlayerState(id, 'joined'); return value;
   }
-  return { get, stats, player,
+  return { get, stats, player, handlers: () => handlers,
     tick() { time += 1000; tick(); },
     async export() { await get('export').onclick(); return JSON.parse(await exportedBlob.text()); }
   };
@@ -67,4 +70,18 @@ test('lobby renders title, participant count, start button, QR screen and PIN', 
   ui.player('PLAYER_1');
   assert.equal(ui.get('participant-count').textContent, '참여인원: 1 / 2명');
   assert.equal(ui.get('start').disabled, false);
+});
+
+test('clicking start switches to in-game view and renders controller packet overlay', async () => {
+  const ui = await screen();
+  const one = ui.player('PLAYER_1');
+  ui.get('start').onclick();
+  assert.equal(ui.get('lobby-view').hidden, true);
+  assert.equal(ui.get('ingame-view').hidden, false);
+  const packet = { type: 'SENSOR', sender_id: 'PLAYER_1', seq: 1, timestamp: 12345,
+    payload: { rotation_vector: { x: 0, y: 0, z: 0, w: 1 }, acceleration: { x: 3, y: 0, z: 0 }, button: 1 } };
+  one.count = 1; one.latest = packet;
+  ui.handlers().onSensorData('PLAYER_1', packet.timestamp, packet.payload);
+  assert.equal(ui.get('ingame-packets').children.length, 1);
+  assert.match(ui.get('ingame-packets').children[0].children[2].textContent, /"seq": 1/);
 });
