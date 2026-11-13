@@ -119,7 +119,7 @@ test('P2P signaling: role checks, room isolation, trusted sender and candidate r
 test('HTTP allowlist and explicit public QR address', async (t) => {
   const f = await fixture(t, 'relay', { publicBaseUrl: 'https://example.test' });
   assert.deepEqual(JSON.parse(f.room.qr_data), { server_url: 'wss://example.test/ws', pin: f.room.room_pin, transport: 'relay' });
-  for (const file of ['/', '/controller.html', '/protocol.js', '/network.js', '/pc.js', '/controller.js', '/style.css', '/health']) {
+  for (const file of ['/', '/controller.html', '/protocol.js', '/network.js', '/front.js', '/back.js', '/controller.js', '/style.css', '/health']) {
     const response = await fetch(f.base + file); assert.equal(response.status, 200, file);
   }
   for (const file of ['/server.js', '/package.json', '/README.txt', '/.env', '/..%2fserver.js']) {
@@ -140,8 +140,8 @@ test('heartbeat releases a controller that no longer replies', async (t) => {
 test('PC module: callbacks, sequence gaps, duplicate rejection and slot reuse', async (t) => {
   const f = await fixture(t);
   const context = vm.createContext({ WebSocket, URL, performance, console, setTimeout, clearTimeout,
-    GameProtocol: require('../Game/protocol.js') });
-  vm.runInContext(readFileSync(require.resolve('../Game/network.js'), 'utf8'), context);
+    GameProtocol: require('../PC/protocol.js') });
+  vm.runInContext(readFileSync(require.resolve('../PC/network.js'), 'utf8'), context);
   const network = context.GameNetwork, events = new EventEmitter();
   t.after(() => network.close());
   const room = await network.createRoom(f.base.replace('http:', 'ws:') + '/ws', {
@@ -181,8 +181,8 @@ test('PC module: callbacks, sequence gaps, duplicate rejection and slot reuse', 
 test('Android packet without seq is relayed unchanged and loss is unknown', async (t) => {
   const f = await fixture(t);
   const context = vm.createContext({ WebSocket, URL, performance, console, setTimeout, clearTimeout,
-    GameProtocol: require('../Game/protocol.js') });
-  vm.runInContext(readFileSync(require.resolve('../Game/network.js'), 'utf8'), context);
+    GameProtocol: require('../PC/protocol.js') });
+  vm.runInContext(readFileSync(require.resolve('../PC/network.js'), 'utf8'), context);
   const network = context.GameNetwork, events = new EventEmitter();
   t.after(() => network.close());
   const room = await network.createRoom(f.base.replace('http:', 'ws:') + '/ws', {

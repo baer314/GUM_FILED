@@ -5,7 +5,7 @@ const { readFile } = require('node:fs/promises');
 const path = require('node:path');
 const { randomInt } = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
-const protocol = require('../Game/protocol.js');
+const protocol = require('../PC/protocol.js');
 
 function createServer({ transport = 'p2p', publicBaseUrl = '',
   stunUrl = 'stun:stun.l.google.com:19302', heartbeatMs = 30000 } = {}) {
@@ -17,14 +17,15 @@ function createServer({ transport = 'p2p', publicBaseUrl = '',
   const iceServers = stunUrl ? [{ urls: stunUrl }] : [];
   const rooms = new Map();
   const files = new Map([
-    ['/', ['public/pc.html', 'text/html']],
-    ['/pc.html', ['public/pc.html', 'text/html']],
+    ['/', ['../PC/main.html', 'text/html']],
+    ['/main.html', ['../PC/main.html', 'text/html']],
     ['/controller.html', ['public/controller.html', 'text/html']],
-    ['/pc.js', ['public/pc.js', 'text/javascript']],
+    ['/front.js', ['../PC/front.js', 'text/javascript']],
+    ['/back.js', ['../PC/back.js', 'text/javascript']],
     ['/controller.js', ['public/controller.js', 'text/javascript']],
-    ['/style.css', ['public/style.css', 'text/css']],
-    ['/network.js', ['../Game/network.js', 'text/javascript']],
-    ['/protocol.js', ['../Game/protocol.js', 'text/javascript']],
+    ['/style.css', ['../PC/style.css', 'text/css']],
+    ['/network.js', ['../PC/network.js', 'text/javascript']],
+    ['/protocol.js', ['../PC/protocol.js', 'text/javascript']],
   ]);
   const server = http.createServer(async (req, res) => {
     if (!['GET', 'HEAD'].includes(req.method)) {

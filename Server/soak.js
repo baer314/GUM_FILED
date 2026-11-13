@@ -12,7 +12,7 @@ async function main() {
   const seconds = Number(process.argv[2] || 300);
   assert(Number.isFinite(seconds) && seconds >= 1 && seconds <= 3600, 'seconds must be 1..3600');
   const reportFile = process.argv[3] && path.resolve(process.argv[3]);
-  const projectRoot = path.resolve(__dirname, '../..');
+  const projectRoot = path.resolve(__dirname, '..');
   assert(!reportFile || !reportFile.toLowerCase().startsWith(projectRoot.toLowerCase() + path.sep), 'Store reports outside GUM_FILED');
   const app = createServer({ transport: 'relay' });
   const sockets = [];

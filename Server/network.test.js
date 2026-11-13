@@ -25,10 +25,10 @@ function browser(t) {
     close() { this.connectionState = 'closed'; }
   }
   const context = vm.createContext({ WebSocket: Socket, RTCPeerConnection: Peer,
-    URL, performance, console, GameProtocol: require('../Game/protocol.js'),
+    URL, performance, console, GameProtocol: require('../PC/protocol.js'),
     setTimeout(callback, ms) { const id = Symbol(); timers.set(id, { callback, ms }); return id; },
     clearTimeout(id) { timers.delete(id); } });
-  vm.runInContext(readFileSync(require.resolve('../Game/network.js'), 'utf8'), context);
+  vm.runInContext(readFileSync(require.resolve('../PC/network.js'), 'utf8'), context);
   const network = context.GameNetwork;
   t.after(() => network.close());
   async function room() {

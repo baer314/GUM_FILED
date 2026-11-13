@@ -31,7 +31,8 @@ async function screen() {
         callbacks.onRoomCreated(room); return room;
       }
     } });
-  vm.runInContext(readFileSync(require.resolve('./public/pc.js'), 'utf8'), context);
+  vm.runInContext(readFileSync(require.resolve('../PC/front.js'), 'utf8'), context);
+  vm.runInContext(readFileSync(require.resolve('../PC/back.js'), 'utf8'), context);
   await get('room-form').onsubmit({ preventDefault() {} });
   function player(id) {
     const value = { id, state: 'ready', count: 0, missing: 0, invalid: 0, latest: null };
@@ -54,4 +55,16 @@ test('export includes packets received after the last screen refresh', async () 
   const ui = await screen();
   const one = ui.player('PLAYER_1'); one.count = 42;
   assert.equal((await ui.export()).players[0].count, 42);
+});
+
+test('lobby renders title, participant count, start button, QR screen and PIN', async () => {
+  const ui = await screen();
+  assert.equal(ui.get('title').textContent, 'GUM FIELD');
+  assert.equal(ui.get('pin').textContent, 'ABC234');
+  assert.match(ui.get('qr-screen').innerHTML, /^<svg\b/);
+  assert.equal(ui.get('participant-count').textContent, '참여인원: 0 / 2명');
+  assert.equal(ui.get('start').disabled, true);
+  ui.player('PLAYER_1');
+  assert.equal(ui.get('participant-count').textContent, '참여인원: 1 / 2명');
+  assert.equal(ui.get('start').disabled, false);
 });

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GUM FIELD · 대기방</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="lobby">
+    <header class="lobby-header">
+      <p class="eyebrow">GUM FIELD · MOBILE KUMDO</p>
+      <h1 id="title">GUM FIELD</h1>
+    </header>
+
+    <div class="lobby-grid">
+      <section class="lobby-participants">
+        <div class="participants-header">
+          <h2>참가자 명단</h2>
+          <p id="participant-count" class="participant-count">참여인원: 0 / 2명</p>
+        </div>
+        <p id="room-status" role="status">대기방을 생성하는 중입니다...</p>
+        <div id="players" class="players"></div>
+        <p id="calibration" class="calibration-status">영점 확인 대기</p>
+      </section>
+
+      <div class="lobby-side">
+        <section class="lobby-start-box">
+          <button id="start" class="start-button" disabled>플레이 시작</button>
+        </section>
+
+        <section class="lobby-qr-box">
+          <h2>QR 접속 · PIN 번호</h2>
+          <div id="qr-screen" class="qr-screen" aria-label="QR 화면">
+            <p class="qr-placeholder">QR 생성 대기 중</p>
+          </div>
+          <div class="pin-box">
+            <span class="pin-label">PIN 번호</span>
+            <p class="pin" id="pin">—</p>
+          </div>
+          <a id="controller-link" hidden target="_blank" rel="noopener">테스트 컨트롤러 열기</a>
+        </section>
+      </div>
+    </div>
+
+    <details class="lobby-tools">
+      <summary>서버 설정 및 시험 기록</summary>
+      <form id="room-form">
+        <label>서버 주소<input id="server-url" required></label>
+        <div class="actions">
+          <button id="create">대기방 다시 생성</button>
+          <button id="close" type="button">방 닫기</button>
+          <button id="export" type="button">시험 결과 내려받기</button>
+        </div>
+        <label>QR 접속 데이터<textarea id="qr-data" rows="2" readonly></textarea></label>
+      </form>
+      <pre id="events" aria-live="polite"></pre>
+    </details>
+  </main>
+  <script src="/protocol.js"></script>
+  <script src="/network.js"></script>
+  <script src="/front.js"></script>
+  <script src="/back.js"></script>
+</body>
+</html>
+
