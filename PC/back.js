@@ -29,7 +29,7 @@ function render() {
   const connectedCount = live.filter((s) => s.state !== 'disconnected').length;
   const canStart = live.some((s) => s.state === 'ready');
   const players = [...history.values()];
-  GameFront.renderPlayers(players, rates, connectedCount, canStart);
+  GameFront.renderPlayers(players, connectedCount, canStart);
   globalThis.InGameBack?.sync(players, rates);
 }
 

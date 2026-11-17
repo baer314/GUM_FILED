@@ -153,16 +153,15 @@
     $('controller-link').hidden = false;
   }
 
-  function renderPlayers(players, rates, connectedCount, canStart) {
+  function renderPlayers(players, connectedCount, canStart) {
     if ($('participant-count')) $('participant-count').textContent = `참여인원: ${connectedCount} / 2명`;
     $('start').disabled = !canStart;
     $('players').replaceChildren();
     for (const s of players) {
       const card = document.createElement('section'); card.dataset.player = s.id;
       const heading = document.createElement('h2'); heading.textContent = s.id;
-      const status = document.createElement('p'); status.textContent = `${s.state} · ${(rates.get(s.id) || 0).toFixed(1)}회/초 · 누적 ${s.count} · 누락 ${s.missing ?? '미측정(seq 없음)'} · 잘못된 입력 ${s.invalid}`;
-      const values = document.createElement('pre'); values.textContent = s.latest ? JSON.stringify(s.latest.payload, null, 2) : '센서 수신 대기';
-      card.append(heading, status, values); $('players').append(card);
+      const status = document.createElement('p'); status.textContent = s.state;
+      card.append(heading, status); $('players').append(card);
     }
   }
 

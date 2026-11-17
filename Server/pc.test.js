@@ -50,8 +50,12 @@ async function screen() {
 test('joining a second player does not reset the first player receive-rate baseline', async () => {
   const ui = await screen();
   const one = ui.player('PLAYER_1'); one.count = 20;
-  ui.player('PLAYER_2'); ui.tick();
-  assert.match(ui.get('players').children[0].children[1].textContent, /20\.0회\/초/);
+  ui.player('PLAYER_2');
+  ui.get('start').onclick();
+  ui.tick();
+  assert.equal(ui.get('players').children[0].children.length, 2);
+  assert.equal(ui.get('players').children[0].children[1].textContent, 'ready');
+  assert.match(ui.get('ingame-packets').children[0].children[1].textContent, /20\.0회\/초/);
 });
 
 test('export includes packets received after the last screen refresh', async () => {
