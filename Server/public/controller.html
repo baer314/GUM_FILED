@@ -1,19 +1,197 @@
 <!doctype html>
 <html lang="ko">
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GUM 통신 시험 · 컨트롤러</title><link rel="stylesheet" href="/style.css">
-<main><p class="eyebrow">GUM FIELD · 가짜 센서 송신</p><h1>테스트 컨트롤러</h1>
-  <p>실제 휴대폰 센서 대신 시험값을 보냅니다. PC에서 시작 신호를 보내면 송신합니다. 브라우저를 뒤로 보내면 송신 주기가 느려질 수 있습니다.</p>
-  <form id="join-form"><label>서버 주소<input id="server-url" required></label>
-    <label>방 PIN<input id="pin" maxlength="6" required autocomplete="off"></label>
-    <button id="join">입장</button><button id="leave" type="button">나가기</button>
-  </form>
-  <section><h2 id="player">입장 전</h2><p id="status" role="status">서버 주소와 PIN을 입력해 주세요.</p>
-    <label>송신 목표 (회/초)<input id="rate" type="number" min="1" max="120" value="60"></label>
-    <label>가짜 가속도 x<input id="motion" type="range" min="-20" max="20" step="0.1" value="0"></label>
-    <label>버튼 상태<select id="button"><option value="0">입력 없음 (0)</option><option value="1">방어 (1)</option><option value="2">강타 충전 (2)</option></select></label>
-    <div class="actions"><button id="pause">시험 송신 일시정지</button></div>
-    <p id="counts">송신 대기</p><pre id="events"></pre>
-  </section>
-</main><script src="/protocol.js"></script><script src="/controller.js"></script>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GUM 통신 시험 · 컨트롤러</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .controller-grid {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    .phone-stage {
+      background: #0e1715;
+      border: 1px solid #2b473e;
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+      height: 340px;
+      margin: 12px 0;
+    }
+    #phone-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .stage-badge {
+      position: absolute;
+      top: 10px;
+      left: 12px;
+      background: rgba(14, 23, 21, 0.78);
+      color: #8ecab1;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 0.78rem;
+      pointer-events: none;
+    }
+    .key-guide {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 12px 0;
+      font-size: 0.85rem;
+      background: #f3f6f4;
+      border: 1px solid #d5e0da;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .key-guide div {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    kbd {
+      background: #fff;
+      border: 1px solid #9ab0a5;
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: ui-monospace, monospace;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #172626;
+    }
+    .axis-row {
+      display: grid;
+      grid-template-columns: 90px 1fr 58px;
+      align-items: center;
+      gap: 10px;
+      margin: 8px 0;
+    }
+    .axis-row input[type="range"] {
+      margin: 0;
+    }
+    .axis-val {
+      text-align: right;
+      font-family: ui-monospace, monospace;
+      font-size: 0.85rem;
+    }
+    .key-pills {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 10px 0;
+    }
+    .key-pill {
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      background: #e7efeb;
+      color: #2c463c;
+      border: 1px solid #c2d3ca;
+      transition: all 0.1s ease;
+    }
+    .key-pill.active {
+      background: #205d48;
+      color: #fff;
+      border-color: #164434;
+      transform: translateY(-1px);
+    }
+    @media (max-width: 800px) {
+      .controller-grid, .key-guide {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">GUM FIELD · 가짜 센서 송신</p>
+    <h1>테스트 컨트롤러</h1>
+    <p>키보드로 핸드폰의 3축 회전(X/Y/Z), 공격 가속도(A), 볼륨업(S), 강타(D), 영점(Space)을 조작하여 실시간 패킷(xyzw)을 송신합니다.</p>
+
+    <form id="join-form">
+      <label>서버 주소<input id="server-url" required></label>
+      <label>방 PIN<input id="pin" maxlength="6" required autocomplete="off"></label>
+      <button id="join">입장</button>
+      <button id="leave" type="button">나가기</button>
+    </form>
+
+    <div class="controller-grid">
+      <section>
+        <h2>핸드폰 3D 방향 모델</h2>
+        <div class="phone-stage">
+          <canvas id="phone-canvas" width="520" height="340"></canvas>
+          <div class="stage-badge" id="quat-display">Quaternion(xyzw): 0.00, 0.00, 0.00, 1.00</div>
+        </div>
+
+        <div class="key-pills">
+          <span class="key-pill" id="pill-a">A 공격 (가속도 증가)</span>
+          <span class="key-pill" id="pill-s">S 볼륨업 (방어: 1)</span>
+          <span class="key-pill" id="pill-d">D 강타키 (강타: 2)</span>
+          <span class="key-pill" id="pill-space">Space 영점 조절</span>
+        </div>
+
+        <div class="key-guide">
+          <div><kbd>↑</kbd> <kbd>↓</kbd> X축 회전 (상하 기울기)</div>
+          <div><kbd>←</kbd> <kbd>→</kbd> Y축 회전 (좌우 방향)</div>
+          <div><kbd>Shift</kbd>+<kbd>←</kbd><kbd>→</kbd> / <kbd>Q</kbd><kbd>E</kbd> Z축 회전 (비틀기)</div>
+          <div><kbd>Space</kbd> 영점 잡기 (초기화)</div>
+          <div><kbd>A</kbd> 가속도 증가 (공격 동작)</div>
+          <div><kbd>S</kbd> 볼륨업 버튼 (1) / <kbd>D</kbd> 강타키 (2)</div>
+        </div>
+
+        <div class="axis-controls">
+          <div class="axis-row">
+            <span>X축 (Pitch)</span>
+            <input id="rot-x" type="range" min="-180" max="180" step="1" value="0">
+            <span class="axis-val" id="rot-x-val">0°</span>
+          </div>
+          <div class="axis-row">
+            <span>Y축 (Yaw)</span>
+            <input id="rot-y" type="range" min="-180" max="180" step="1" value="0">
+            <span class="axis-val" id="rot-y-val">0°</span>
+          </div>
+          <div class="axis-row">
+            <span>Z축 (Roll)</span>
+            <input id="rot-z" type="range" min="-180" max="180" step="1" value="0">
+            <span class="axis-val" id="rot-z-val">0°</span>
+          </div>
+          <div class="actions">
+            <button id="zero-btn" type="button">영점 잡기 (Space)</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2 id="player">입장 전</h2>
+        <p id="status" role="status">서버 주소와 PIN을 입력해 주세요.</p>
+        <label>송신 목표 (회/초)<input id="rate" type="number" min="1" max="120" value="60"></label>
+        <label>공격 가속도 (A키로 증가)<input id="motion" type="range" min="-20" max="20" step="0.1" value="0"></label>
+        <label>버튼 상태 (S: 볼륨업 / D: 강타)
+          <select id="button">
+            <option value="0">입력 없음 (0)</option>
+            <option value="1">볼륨업 / 방어 (1) [S키]</option>
+            <option value="2">강타 (2) [D키]</option>
+          </select>
+        </label>
+        <div class="actions">
+          <button id="pause" type="button">시험 송신 일시정지</button>
+        </div>
+        <p id="counts">송신 대기</p>
+        <pre id="packet-preview"></pre>
+        <pre id="events"></pre>
+      </section>
+    </div>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="/protocol.js"></script>
+  <script src="/controller.js"></script>
+</body>
 </html>

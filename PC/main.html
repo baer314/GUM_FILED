@@ -59,13 +59,21 @@
 
   <section id="ingame-view" class="ingame-view" hidden>
     <canvas id="ingame-canvas" class="ingame-canvas"></canvas>
+    <div class="ingame-split-ui" aria-hidden="true">
+      <div class="split-pane-label split-left-label">PLAYER 1 VIEW</div>
+      <div class="split-divider"></div>
+      <div class="split-pane-label split-right-label">PLAYER 2 VIEW</div>
+    </div>
+    <div class="ingame-top-bar">
+      <span class="tab-hint"><kbd>Tab</kbd> 패킷 정보 토글</span>
+      <button id="back-to-lobby" type="button" class="overlay-btn">대기방 보기</button>
+    </div>
     <aside id="ingame-overlay" class="ingame-overlay" aria-live="polite">
       <div class="ingame-overlay-header">
         <div>
-          <p class="ingame-eyebrow">GUM FIELD · IN-GAME MONITOR</p>
+          <p class="ingame-eyebrow">GUM FIELD · IN-GAME MONITOR (TAB TOGGLE)</p>
           <h2>실시간 컨트롤러 패킷 정보</h2>
         </div>
-        <button id="back-to-lobby" type="button" class="overlay-btn">대기방 보기</button>
       </div>
       <div id="ingame-packets" class="ingame-packets"></div>
     </aside>
