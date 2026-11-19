@@ -161,12 +161,17 @@ function initPhone3D() {
 
   phoneGroup = new THREE.Group();
 
+  // 기본 자세(0, 0, 0, 1): 핸드폰 화면을 위로 놓은 상태에서 오른쪽 면(+X)이 위(+Y)로 가도록 Z축 +90도 회전한 그립 그룹
+  const gripGroup = new THREE.Group();
+  gripGroup.rotation.z = Math.PI / 2;
+  phoneGroup.add(gripGroup);
+
   // 스마트폰 본체
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(1.3, 0.14, 2.6),
     new THREE.MeshStandardMaterial({ color: 0x263834, roughness: 0.35, metalness: 0.45 })
   );
-  phoneGroup.add(body);
+  gripGroup.add(body);
 
   // 스마트폰 화면
   const screen = new THREE.Mesh(
@@ -174,7 +179,7 @@ function initPhone3D() {
     new THREE.MeshStandardMaterial({ color: 0x4fd1a5, roughness: 0.25, metalness: 0.15 })
   );
   screen.position.y = 0.08;
-  phoneGroup.add(screen);
+  gripGroup.add(screen);
 
   // 상단 스피커/카메라 노치 (앞쪽 방향 표시)
   const speaker = new THREE.Mesh(
@@ -182,7 +187,7 @@ function initPhone3D() {
     new THREE.MeshStandardMaterial({ color: 0x0e1715 })
   );
   speaker.position.set(0, 0.09, -1.02);
-  phoneGroup.add(speaker);
+  gripGroup.add(speaker);
 
   // 전방 검 방향 표시 콘
   bladeGuideMesh = new THREE.Mesh(
@@ -191,7 +196,7 @@ function initPhone3D() {
   );
   bladeGuideMesh.rotation.x = -Math.PI / 2;
   bladeGuideMesh.position.set(0, 0.08, -1.6);
-  phoneGroup.add(bladeGuideMesh);
+  gripGroup.add(bladeGuideMesh);
 
   // 측면 볼륨업 버튼 (S키 표시)
   volUpMesh = new THREE.Mesh(
@@ -199,7 +204,7 @@ function initPhone3D() {
     new THREE.MeshStandardMaterial({ color: 0x7ee0b8 })
   );
   volUpMesh.position.set(-0.68, 0, -0.45);
-  phoneGroup.add(volUpMesh);
+  gripGroup.add(volUpMesh);
 
   // 측면 강타 버튼 (D키 표시)
   smashMesh = new THREE.Mesh(
@@ -207,7 +212,7 @@ function initPhone3D() {
     new THREE.MeshStandardMaterial({ color: 0xf28b66 })
   );
   smashMesh.position.set(-0.68, 0, 0.15);
-  phoneGroup.add(smashMesh);
+  gripGroup.add(smashMesh);
 
   scene.add(phoneGroup);
 
@@ -227,7 +232,8 @@ function initPhone3D() {
 function updatePhoneModel() {
   const q = eulerToQuaternion(state.rotX, state.rotY, state.rotZ);
   if (phoneGroup && renderer && scene && camera) {
-    phoneGroup.quaternion.set(q.x, q.y, q.z, q.w);
+    // 인게임(inGameFront.js)의 mapGripQuaternion과 동일하게 오른쪽 면이 위로 간 파지 기준 회전 적용
+    phoneGroup.quaternion.set(-q.y, q.x, q.z, q.w);
     const thrust = Math.min(0.45, Math.max(-0.2, state.accel.x * 0.02));
     phoneGroup.position.set(0, 0, -thrust);
     if (volUpMesh?.material) {
@@ -319,26 +325,26 @@ const ROT_STEP = 2.5;
 setInterval(() => {
   let changed = false;
 
-  // 방향키 상/하: X축 회전 (Pitch)
+  // 방향키 상/하: 오른쪽 면이 위로 간 파지 기준 상/하 회전 (센서 Y축)
   if (pressedKeys.has('ArrowUp')) {
-    state.rotX = wrapAngle(state.rotX + ROT_STEP);
+    state.rotY = wrapAngle(state.rotY - ROT_STEP);
     changed = true;
   }
   if (pressedKeys.has('ArrowDown')) {
-    state.rotX = wrapAngle(state.rotX - ROT_STEP);
+    state.rotY = wrapAngle(state.rotY + ROT_STEP);
     changed = true;
   }
 
-  // 방향키 좌/우: Shift와 함께 누르면 Z축(Roll), 기본은 Y축(Yaw) 회전
+  // 방향키 좌/우: Shift와 함께 누르면 Z축(Roll), 기본은 좌/우 회전 (센서 X축)
   const zMode = pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight');
   if (pressedKeys.has('ArrowLeft')) {
     if (zMode) state.rotZ = wrapAngle(state.rotZ + ROT_STEP);
-    else state.rotY = wrapAngle(state.rotY + ROT_STEP);
+    else state.rotX = wrapAngle(state.rotX + ROT_STEP);
     changed = true;
   }
   if (pressedKeys.has('ArrowRight')) {
     if (zMode) state.rotZ = wrapAngle(state.rotZ - ROT_STEP);
-    else state.rotY = wrapAngle(state.rotY - ROT_STEP);
+    else state.rotX = wrapAngle(state.rotX - ROT_STEP);
     changed = true;
   }
 

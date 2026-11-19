@@ -47,4 +47,7 @@
 .sword-angle-info{margin:0 0 10px;padding:8px 12px;border-radius:8px;background:rgba(79,209,165,.14);border:1px solid rgba(79,209,165,.32);font:600 .9rem/1.55 ui-monospace,monospace;color:#e6f4ef;white-space:pre-line;order:3}
 .packet-card[data-player="PLAYER_2"] .sword-angle-info{background:rgba(242,139,102,.14);border-color:rgba(242,139,102,.35)}
 .packet-card pre{flex:1;min-height:0;margin:0;overflow-y:auto;background:rgba(0,0,0,.42);color:#e6f4ef;border:1px solid rgba(255,255,255,.08);font-size:.85rem;padding:14px;order:4}
+.ingame-duration-panel{position:absolute;top:60px;right:20px;width:min(360px,calc(100vw - 40px));background:rgba(14,23,21,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(126,224,184,.42);border-radius:14px;padding:18px 20px;color:#edf5f2;box-shadow:0 16px 38px rgba(0,0,0,.52);z-index:104}
+.duration-form label{margin:10px 0;font-size:.86rem;color:#c6dbd3}
+.duration-form input{background:rgba(0,0,0,.45);color:#fff;border:1px solid rgba(126,224,184,.35);padding:8px 10px;border-radius:6px;font:600 .95rem ui-monospace,monospace}
 @media(max-width:750px){main{margin:24px auto;padding:0 14px}.lobby-grid,.players{grid-template-columns:1fr}section,form{padding:16px}h1{font-size:1.6rem}}
