@@ -65,9 +65,29 @@
       <div class="split-pane-label split-right-label">PLAYER 2 VIEW</div>
     </div>
     <div class="ingame-top-bar">
-      <span class="tab-hint"><kbd>Tab</kbd> 패킷 정보 토글</span>
+      <span class="tab-hint"><kbd>0</kbd> 상태시간 설정 · <kbd>Tab</kbd> 패킷 정보 토글</span>
       <button id="back-to-lobby" type="button" class="overlay-btn">대기방 보기</button>
     </div>
+    <aside id="ingame-duration-panel" class="ingame-duration-panel" hidden aria-label="판정별 상태이상 시간 설정">
+      <div class="ingame-overlay-header">
+        <div>
+          <p class="ingame-eyebrow">REAL-TIME TUNING (KEY 0)</p>
+          <h2>판정별 상태이상 유지시간 (초)</h2>
+        </div>
+        <button id="close-duration-panel" type="button" class="overlay-btn">닫기</button>
+      </div>
+      <div class="duration-form">
+        <label>공격 성공 → 상대 피격(HIT) 시간 (초)
+          <input id="dur-attack-hit" type="number" min="0" max="60" step="0.1" value="1.0">
+        </label>
+        <label>공격 실패 → 본인 기절(STUN) 시간 (초)
+          <input id="dur-attack-fail" type="number" min="0" max="60" step="0.1" value="1.0">
+        </label>
+        <label>패리 → 양쪽 기절(STUN) 시간 (초)
+          <input id="dur-parry-stun" type="number" min="0" max="60" step="0.1" value="1.0">
+        </label>
+      </div>
+    </aside>
     <aside id="ingame-overlay" class="ingame-overlay" aria-live="polite">
       <div class="ingame-overlay-header">
         <div>
