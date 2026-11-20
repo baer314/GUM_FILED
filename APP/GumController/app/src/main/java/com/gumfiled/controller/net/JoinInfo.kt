@@ -11,7 +11,7 @@ data class JoinInfo(val serverUrl: String?, val pin: String?) {
         /**
          * qr_data 형식이 아직 미정이라 흔한 형태를 모두 받아준다.
          *  - URL:   ws://192.168.0.5:8080?pin=A1B2C3   (http/https도 허용)
-         *  - JSON:  {"url":"ws://192.168.0.5:8080","pin":"A1B2C3"}  (url 대신 ip+port도 허용)
+         *  - JSON:  {"server_url":"ws://192.168.0.5:8080/ws","pin":"A1B2C3","transport":"relay"}  (실제 서버 형식, url/ip+port도 허용)
          *  - PIN만: A1B2C3
          * 형식이 정해지면 해당 분기만 남기면 된다.
          */
@@ -21,7 +21,7 @@ data class JoinInfo(val serverUrl: String?, val pin: String?) {
             if (text.startsWith("{")) {
                 return try {
                     val o = JSONObject(text)
-                    val url = o.optString("url").ifEmpty { o.optString("server") }.ifEmpty {
+                    val url = o.optString("server_url").ifEmpty { o.optString("url") }.ifEmpty { o.optString("server") }.ifEmpty {
                         val ip = o.optString("ip")
                         if (ip.isEmpty()) "" else "$ip:${o.optInt("port", Config.DEFAULT_PORT)}"
                     }
@@ -47,9 +47,9 @@ data class JoinInfo(val serverUrl: String?, val pin: String?) {
 
         /**
          * 사용자가 입력한 주소를 WebSocket URL로 맞춘다.
-         *  "192.168.0.5"        → ws://192.168.0.5:8080
-         *  "192.168.0.5:9000"   → ws://192.168.0.5:9000
-         *  "https://host"       → wss://host
+         *  "192.168.0.5"        → ws://192.168.0.5:8080/ws
+         *  "192.168.0.5:9000"   → ws://192.168.0.5:9000/ws
+         *  "https://host"       → wss://host/ws
          */
         fun normalizeServer(input: String?): String? {
             var s = input?.trim().orEmpty()
@@ -63,10 +63,14 @@ data class JoinInfo(val serverUrl: String?, val pin: String?) {
             val uri = Uri.parse(s)
             val host = uri.host
             if (host.isNullOrEmpty()) return null
-            if (uri.port == -1 && uri.scheme == "ws") {
-                return uri.buildUpon().encodedAuthority("$host:${Config.DEFAULT_PORT}").build().toString()
-            }
-            return s
+            val withPort = if (uri.port == -1 && uri.scheme == "ws") {
+                uri.buildUpon().encodedAuthority("$host:${Config.DEFAULT_PORT}").build()
+            } else uri
+            // 서버의 WebSocket 경로는 /ws (Server/server.js). 경로를 안 적었으면 붙여준다
+            val path = withPort.path
+            return if (path.isNullOrEmpty() || path == "/") {
+                withPort.buildUpon().path("/ws").build().toString()
+            } else withPort.toString()
         }
     }
 }
