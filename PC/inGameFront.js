@@ -358,14 +358,30 @@
   }
 
   // 핸드폰 기본 파지 자세 매핑:
-  // 핸드폰 화면을 위로 놓은 기준(0, 0, 0, 1)에서 핸드폰의 오른쪽 면(+X)이 위(+Y)를 향하고
-  // 화면(+Y)과 후면 카메라(-Y)가 검의 좌/우 옆면(±X)이 되도록 Z축 기준 +90도 회전 변환 적용
   function mapGripQuaternion(q) {
+    // 1) 축 매핑 (둘 다 -를 유지해야 90도 회전 시 축이 뒤바뀌지 않음)
+    const mx = -q.z;
+    const my = -q.x;
+    const mz = -q.y;
+    const mw = q.w;
+
+    // 2) Z축 -90도 회전 계산
+    const addDegZ = -90;
+    const halfRad = (addDegZ * Math.PI) / 180 / 2;
+    const s = Math.sin(halfRad);
+    const c = Math.cos(halfRad);
+
+    const rx = mx * c + my * s;
+    const ry = my * c - mx * s;
+    const rz = mz * c + mw * s;
+    const rw = mw * c - mz * s;
+
+    // 3) 회전 계산이 끝난 뒤의 결과값(rx, ry, rz)에서 방향 부호만 조절
     return {
-      x: -q.y,
-      y: q.x,
-      z: q.z,
-      w: q.w,
+      x: rx,
+      y: -ry, // <- 여기서 최종 y만 반전시키면 축이 바뀌지 않고 y 방향만 반대가 됩니다!
+      z: rz,
+      w: rw,
     };
   }
 
