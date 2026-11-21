@@ -8,6 +8,7 @@ import com.gumfiled.controller.net.Transport
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * 정해진 주기(Config.SEND_INTERVAL_US, 기본 60Hz)로 SENSOR 패킷을 보낸다.
@@ -17,6 +18,12 @@ class SensorStreamer(private val sampler: SensorSampler) {
 
     private var executor: ScheduledExecutorService? = null
 
+    /**
+     * 패킷 순번. PC는 이전 값 이하인 패킷을 버리므로
+     * 같은 입장(세션) 안에서는 start/stop을 반복해도 계속 이어서 증가해야 한다.
+     */
+    private val seq = AtomicLong(0)
+
     /** 실제로 보낸 패킷 수 (초당). 화면 표시용 */
     @Volatile var sentPerSecond = 0
         private set
@@ -24,6 +31,11 @@ class SensorStreamer(private val sampler: SensorSampler) {
     private var windowStartMs = 0L
 
     val isRunning: Boolean get() = executor != null
+
+    /** 새로 입장할 때 호출. 서버가 새 플레이어로 등록하므로 순번도 0부터 시작한다 */
+    fun resetSequence() {
+        seq.set(0)
+    }
 
     /**
      * @param transport null이면 패킷만 만들고 보내지는 않는다 (센서 테스트 모드)
@@ -37,7 +49,9 @@ class SensorStreamer(private val sampler: SensorSampler) {
             it.scheduleAtFixedRate({
                 // 여기서 예외가 밖으로 나가면 이후 전송이 조용히 멈추므로 반드시 잡는다
                 try {
-                    val packet = Packet.sensor(playerId, System.currentTimeMillis(), sampler.snapshot(), button())
+                    val packet = Packet.sensor(
+                        playerId, seq.getAndIncrement(), System.currentTimeMillis(), sampler.snapshot(), button()
+                    )
                     transport?.send(packet)
                     countSent()
                 } catch (e: Exception) {

@@ -44,6 +44,6 @@ dependencies {
     // QR 스캔
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 
-    // 11/26 WebRTC 단계에서 주석 해제
-    // implementation("io.getstream:stream-webrtc-android:1.3.9")
+    // WebRTC (p2p 모드). 구글 libwebrtc를 GetStream이 빌드해서 배포하는 버전, 패키지는 org.webrtc
+    implementation("io.getstream:stream-webrtc-android:1.3.9")
 }
