@@ -23,7 +23,9 @@ async function main() {
       const ws = new WebSocket(url); sockets.push(ws); await once(ws, 'open'); return ws;
     }
     const host = await connect();
-    let received = [0, 0], lastSeq = [-1, -1], failure = null;
+    const received = [0, 0], lastSeq = [-1, -1];
+    const sentAt = [new Map(), new Map()], latencies = [[], []];
+    let failure = null;
     host.on('message', (raw) => {
       const m = JSON.parse(raw);
       if (m.type !== 'SENSOR') return;
@@ -31,6 +33,8 @@ async function main() {
         const index = ['PLAYER_1', 'PLAYER_2'].indexOf(m.sender_id);
         assert(index >= 0); assert.equal(m.payload.acceleration.x, index === 0 ? 20 : -20);
         assert.equal(m.seq, lastSeq[index] + 1); lastSeq[index] = m.seq; received[index]++;
+        latencies[index].push(performance.now() - sentAt[index].get(m.seq));
+        sentAt[index].delete(m.seq);
       } catch (error) { failure ||= error; }
     });
     const roomPromise = once(host, 'message');
@@ -49,11 +53,15 @@ async function main() {
     let sent = 0, next = began, progressAt = began + 30000;
     while (performance.now() < end) {
       if (failure) throw failure;
-      for (let index = 0; index < 2; index++) players[index].send(JSON.stringify({
-        type: 'SENSOR', sender_id: `PLAYER_${index + 1}`, seq: sent, timestamp: Date.now(),
-        payload: { rotation_vector: { x: 0, y: 0, z: 0, w: 1 },
-          acceleration: { x: index === 0 ? 20 : -20, y: 0, z: 0 }, button: index + 1 }
-      }));
+      for (let index = 0; index < 2; index++) {
+        const packet = JSON.stringify({
+          type: 'SENSOR', sender_id: `PLAYER_${index + 1}`, seq: sent, timestamp: Date.now(),
+          payload: { rotation_vector: { x: 0, y: 0, z: 0, w: 1 },
+            acceleration: { x: index === 0 ? 20 : -20, y: 0, z: 0 }, button: index + 1 }
+        });
+        sentAt[index].set(sent, performance.now());
+        players[index].send(packet);
+      }
       sent++; next += 1000 / 60;
       const now = performance.now();
       if (now > progressAt) { console.log(JSON.stringify({ elapsedSeconds: Math.round((now - began) / 1000), sentPerPlayer: sent, received })); progressAt += 30000; }
@@ -64,9 +72,15 @@ async function main() {
     if (failure) throw failure;
     assert.deepEqual(received, [sent, sent]);
     const elapsedSeconds = (performance.now() - began) / 1000;
+    // All sockets share this process's monotonic clock. These values exclude sensor capture and rendering.
+    const localRelayLatencyMs = latencies.map((samples) => {
+      samples.sort((a, b) => a - b);
+      const percentile = (p) => Number(samples[Math.ceil(samples.length * p) - 1].toFixed(3));
+      return { p50: percentile(0.5), p95: percentile(0.95), max: percentile(1) };
+    });
     const result = { test: 'local-websocket-relay-synthetic', passed: true, actualAndroidVerified: false,
       externalNetworksVerified: false, elapsedSeconds, targetHz: 60, sentPerPlayer: sent, received,
-      receivedHz: received.map((n) => n / elapsedSeconds), missing: [0, 0] };
+      receivedHz: received.map((n) => n / elapsedSeconds), missing: [0, 0], localRelayLatencyMs };
     if (reportFile) await writeFile(reportFile, JSON.stringify(result, null, 2) + '\n');
     console.log(JSON.stringify(result));
   } finally { for (const ws of sockets) ws.terminate(); await app.close(); }

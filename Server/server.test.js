@@ -86,6 +86,152 @@ test('relay: both inputs, controls, malformed input and sender spoofing', async 
   assert.equal((await one.next()).code, 'ALREADY_JOINED');
 });
 
+function holdFirstSensorWrite(t, backedUp = true) {
+  const send = WebSocket.prototype.send;
+  const bufferedAmount = Object.getOwnPropertyDescriptor(WebSocket.prototype, 'bufferedAmount').get;
+  let complete, blockedSocket;
+  t.mock.getter(WebSocket.prototype, 'bufferedAmount', function () {
+    return this === blockedSocket ? 2048 : bufferedAmount.call(this);
+  });
+  t.mock.method(WebSocket.prototype, 'send', function (data, options, callback) {
+    if (!complete && typeof options === 'function' && JSON.parse(data).type === 'SENSOR') {
+      complete = options;
+      if (backedUp) blockedSocket = this;
+      return send.call(this, data);
+    }
+    return send.call(this, data, options, callback);
+  });
+  return () => { blockedSocket = null; complete(); };
+}
+
+async function waitForPriorFrames(player) {
+  const pong = once(player.ws, 'pong', { signal: AbortSignal.timeout(3000) });
+  player.ws.ping();
+  await pong;
+}
+
+test('relay preserves a brief button press when a write callback lags but the socket can send', async (t) => {
+  const f = await fixture(t), one = await f.join();
+  await f.host.next();
+  const release = holdFirstSensorWrite(t, false);
+  one.send(sample('PLAYER_1', 0));
+  assert.equal((await f.host.next()).seq, 0);
+
+  const press = sample('PLAYER_1', 1);
+  press.payload.button = 1;
+  one.send(press);
+  one.send(sample('PLAYER_1', 2));
+  assert.deepEqual(await f.host.next(), { type: 'BUTTON_CHANGE', sender_id: 'PLAYER_1', button: 1 });
+  assert.equal((await f.host.next()).payload.button, 1);
+  assert.deepEqual(await f.host.next(), { type: 'BUTTON_CHANGE', sender_id: 'PLAYER_1', button: 0 });
+  assert.equal((await f.host.next()).payload.button, 0);
+  release();
+});
+
+test('PC receives both short buttons in order and the newest motion after relay congestion', { timeout: 5000 }, async (t) => {
+  const f = await fixture(t);
+  const context = vm.createContext({ WebSocket, URL, performance, console, setTimeout, clearTimeout,
+    GameProtocol: require('../PC/protocol.js') });
+  vm.runInContext(readFileSync(require.resolve('../PC/network.js'), 'utf8'), context);
+  const network = context.GameNetwork, events = new EventEmitter();
+  t.after(() => network.close());
+  const room = await network.createRoom(f.base.replace('http:', 'ws:') + '/ws', {
+    onPlayerState: (id, state) => events.emit(state, id),
+    onSensorData: (id) => events.emit(id),
+  });
+  const players = [];
+  for (const id of ['PLAYER_1', 'PLAYER_2']) {
+    const controller = await f.client();
+    const ready = once(events, 'ready');
+    controller.send({ type: 'JOIN_ROOM', client_type: 'CONTROLLER', pin: room.room_pin });
+    assert.equal((await controller.next()).assigned_id, id);
+    assert.equal((await ready)[0], id);
+    players.push({ id, controller });
+  }
+  network.sendGameStart();
+  for (const { controller } of players) assert.equal((await controller.next()).type, 'GAME_START');
+
+  const release = holdFirstSensorWrite(t);
+  const firstMotion = once(events, 'PLAYER_1');
+  players[0].controller.send(sample('PLAYER_1'));
+  await firstMotion;
+
+  for (const [i, { id, controller }] of players.entries()) {
+    const press = sample(id, 1);
+    press.payload.button = i + 1;
+    controller.send(press);
+    const fresh = sample(id, 2);
+    fresh.payload.acceleration.x = i === 0 ? 2 : -2;
+    controller.send(fresh);
+  }
+  await Promise.all(players.map(({ controller }) => waitForPriorFrames(controller)));
+  const latestMotion = players.map(({ id }) => once(events, id));
+  release();
+  await Promise.all(latestMotion);
+
+  for (const [i, { id }] of players.entries()) {
+    const { latest } = network.getStats().find((s) => s.id === id);
+    assert.equal(latest.seq, 2);
+    assert.equal(latest.payload.acceleration.x, i === 0 ? 2 : -2);
+    assert.equal(latest.payload.button, 0, 'Motion would have overwritten the short press');
+    assert.equal(network.consumeButton(id), i + 1);
+  }
+  for (const { id } of players) assert.equal(network.consumeButton(id), 0);
+
+  const { id, controller } = players[0];
+  const pressed = sample(id, 3);
+  pressed.payload.button = 1;
+  const motion = once(events, id);
+  controller.send(pressed);
+  await motion;
+  const disconnected = once(events, 'disconnected');
+  await controller.close();
+  assert.equal((await disconnected)[0], id);
+  assert.equal(network.consumeButton(id), 0);
+});
+
+test('relay forwards the latest sample of each player after a blocked write', async (t) => {
+  const f = await fixture(t), one = await f.join(), two = await f.join();
+  await f.host.next(); await f.host.next();
+  const release = holdFirstSensorWrite(t);
+  one.send(sample('PLAYER_1', 0));
+  assert.equal((await f.host.next()).seq, 0);
+
+  for (let seq = 1; seq <= 9; seq++) {
+    one.send(sample('PLAYER_1', seq));
+    two.send(sample('PLAYER_2', seq));
+  }
+  await Promise.all([one, two].map(waitForPriorFrames));
+  f.host.send({ type: 'GAME_START' });
+  assert.equal((await one.next()).type, 'GAME_START');
+  assert.equal((await two.next()).type, 'GAME_START');
+
+  release();
+  const latest = [await f.host.next(), await f.host.next()];
+  assert.deepEqual(latest.map((m) => [m.sender_id, m.seq]).sort(), [['PLAYER_1', 9], ['PLAYER_2', 9]]);
+});
+
+test('relay discards queued input when the player slot is reused', async (t) => {
+  const f = await fixture(t), one = await f.join(), two = await f.join();
+  await f.host.next(); await f.host.next();
+  const release = holdFirstSensorWrite(t);
+  two.send(sample('PLAYER_2', 0));
+  await f.host.next();
+
+  one.send(sample('PLAYER_1', 99));
+  await waitForPriorFrames(one);
+  await one.close();
+  assert.equal((await f.host.next()).type, 'PLAYER_LEFT');
+  const replacement = await f.join();
+  assert.equal(replacement.joined.assigned_id, 'PLAYER_1');
+  assert.equal((await f.host.next()).type, 'PLAYER_JOINED');
+
+  release();
+  const fresh = sample('PLAYER_1', 0);
+  replacement.send(fresh);
+  assert.deepEqual(await f.host.next(), fresh);
+});
+
 test('P2P signaling: role checks, room isolation, trusted sender and candidate routing', async (t) => {
   const f = await fixture(t, 'p2p');
   const one = await f.join(); await f.host.next();
