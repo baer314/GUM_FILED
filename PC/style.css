@@ -47,7 +47,18 @@
 .sword-angle-info{margin:0 0 10px;padding:8px 12px;border-radius:8px;background:rgba(79,209,165,.14);border:1px solid rgba(79,209,165,.32);font:600 .9rem/1.55 ui-monospace,monospace;color:#e6f4ef;white-space:pre-line;order:3}
 .packet-card[data-player="PLAYER_2"] .sword-angle-info{background:rgba(242,139,102,.14);border-color:rgba(242,139,102,.35)}
 .packet-card pre{flex:1;min-height:0;margin:0;overflow-y:auto;background:rgba(0,0,0,.42);color:#e6f4ef;border:1px solid rgba(255,255,255,.08);font-size:.85rem;padding:14px;order:4}
-.ingame-duration-panel{position:absolute;top:60px;right:20px;width:min(360px,calc(100vw - 40px));background:rgba(14,23,21,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(126,224,184,.42);border-radius:14px;padding:18px 20px;color:#edf5f2;box-shadow:0 16px 38px rgba(0,0,0,.52);z-index:104}
+.ingame-duration-panel{position:absolute;top:60px;right:20px;width:min(360px,calc(100vw - 40px));max-height:calc(100vh - 80px);display:flex;flex-direction:column;background:rgba(14,23,21,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(126,224,184,.42);border-radius:14px;padding:18px 20px;color:#edf5f2;box-shadow:0 16px 38px rgba(0,0,0,.52);z-index:104}
+.duration-form{flex:1;min-height:0;overflow-y:auto;padding-right:6px;scrollbar-width:thin;scrollbar-color:rgba(126,224,184,.45) rgba(0,0,0,.25)}
 .duration-form label{margin:10px 0;font-size:.86rem;color:#c6dbd3}
 .duration-form input{background:rgba(0,0,0,.45);color:#fff;border:1px solid rgba(126,224,184,.35);padding:8px 10px;border-radius:6px;font:600 .95rem ui-monospace,monospace}
+.xyz-threshold-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:6px}
+.frontal-sword-hud{position:absolute;inset:0;pointer-events:none;z-index:101}
+.frontal-hud-box{position:absolute;bottom:18px;width:190px;background:rgba(10,18,16,.84);border:1px solid rgba(142,202,177,.38);border-radius:12px;padding:10px 12px;color:#e6f4ef;backdrop-filter:blur(6px)}
+.frontal-hud-left{left:18px;border-color:rgba(79,209,165,.45)}
+.frontal-hud-right{right:18px;border-color:rgba(242,139,102,.45)}
+.frontal-hud-title{margin:0 0 6px;font-size:.75rem;font-weight:700;letter-spacing:.06em;color:#8ecab1}
+.frontal-hud-right .frontal-hud-title{color:#f28b66}
+.frontal-svg-wrap{width:100%;aspect-ratio:1/1;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.12);border-radius:8px;overflow:hidden}
+.frontal-svg-wrap svg{width:100%;height:100%;display:block}
+.frontal-hud-meta{margin:6px 0 0;font:600 .76rem/1.35 ui-monospace,monospace;color:#c6dbd3;text-align:center}
 @media(max-width:750px){main{margin:24px auto;padding:0 14px}.lobby-grid,.players{grid-template-columns:1fr}section,form{padding:16px}h1{font-size:1.6rem}}

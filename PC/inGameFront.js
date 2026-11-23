@@ -4,19 +4,166 @@
   let scene = null, cameraP1 = null, cameraP2 = null, renderer = null, animId = null;
   let keyBound = false;
   const meshes = new Map();
+  const playerGroups = new Map();
+  const playerArmExtensions = new Map();
   const receivedAngles = new Map();
   const receivedPlayerInfo = new Map();
+  const CAMERA_BACK_OFFSET = 2.4;
+  const CAMERA_HEIGHT = 2.3;
+  const CAMERA_LOOK_FORWARD = 6.0;
+  const ARM_RETRACT_SMOOTHING = 0.16;
+  let currentPlayerDistance = 3.0;
+  let currentCameraBackOffset = CAMERA_BACK_OFFSET;
+  let currentCameraHeight = CAMERA_HEIGHT;
+  let currentSelfHeadOpacity = 0.35;
+  let currentHeadOffsetZ = 0.0;
+  let currentHeadHitboxSize = { x: 0.88, y: 0.88, z: 0.88 };
+  let currentAttackArmExtension = 0.65;
+  let currentDefenseSwordOffset = 1.2;
+  let currentDefenseAngleThreshold = 35;
+  let currentStunCircleRadius = 0.55;
+  const STUN_CAMERA_PULLBACK_MAX = 0.55;
+  const cameraShakeOffsets = {
+    PLAYER_1: { x: 0, y: 0, z: 0 },
+    PLAYER_2: { x: 0, y: 0, z: 0 },
+  };
+  const cameraStunPullbacks = {
+    PLAYER_1: 0,
+    PLAYER_2: 0,
+  };
 
-  // 3DoF 양팔(검도 양손 파지) 모델 파라미터
-  const ARM_PIVOT_OFFSET = { x: 0, y: -0.22, z: 0.45 };    // 플레이어 몸통 정중앙 스윙 중심점
-  const SHOULDER_HALF_WIDTH = 0.44;                        // 양쪽 어깨/팔꿈치 간격 (왼팔: -0.44, 오른팔: +0.44)
-  const WRIST_BASE_OFFSET = { x: 0, y: 0.12, z: -0.95 };   // 양손으로 쥔 검 손잡이의 기본 정면 위치
+  // [수치 조절용] 방어키를 누를 때 팔(손목) 위치는 유지하고 검만 현재 검 손잡이 방향(+Z) 기준으로 이동하는 기본 오프셋
+  const DEFENSE_HAND_OFFSET = { x: 0.0, y: 0, z: 1.2 };
 
-  // [수치 조절용] 방어키를 누를 때 손(검 손잡이)이 현재 검 방향 기준으로 이동하는 거리
-  //   x: 검날 좌우(바깥쪽/칼등) 방향 (+값: 오른쪽 바깥, -값: 왼쪽 안쪽)
-  //   y: 검 옆면(넓은 면) 수직 방향
-  //   z: 검끝 반대쪽(손잡이 뒤쪽) 방향 (+값: 검끝 반대쪽으로 이동)
-  const DEFENSE_HAND_OFFSET = { x: 0.0, y: 0, z: 1.0 };
+  function applyPlayerDistanceLayout(distance = currentPlayerDistance) {
+    const num = Number(distance);
+    if (Number.isFinite(num) && num > 0) {
+      currentPlayerDistance = num;
+    }
+    const halfDist = currentPlayerDistance / 2;
+
+    const p1Group = playerGroups.get('PLAYER_1');
+    if (p1Group?.position?.set) {
+      p1Group.position.set(-halfDist, 1.1, 0);
+    }
+    const p2Group = playerGroups.get('PLAYER_2');
+    if (p2Group?.position?.set) {
+      p2Group.position.set(halfDist, 1.1, 0);
+    }
+
+    const shake1 = cameraShakeOffsets.PLAYER_1 || { x: 0, y: 0, z: 0 };
+    const shake2 = cameraShakeOffsets.PLAYER_2 || { x: 0, y: 0, z: 0 };
+    const stunBack1 = Number(cameraStunPullbacks.PLAYER_1) || 0;
+    const stunBack2 = Number(cameraStunPullbacks.PLAYER_2) || 0;
+
+    // 카메라 시선 각도(pitch)를 일정하게 유지하고 피격 흔들림(shake) 및 기절 시 카메라가 뒤로 살짝 빠지는 효과(stunBack)를 반영
+    if (cameraP1) {
+      const cam1X = -halfDist - currentCameraBackOffset - stunBack1;
+      cameraP1.position?.set(cam1X + shake1.x, currentCameraHeight + shake1.y, shake1.z);
+      cameraP1.lookAt?.(cam1X + CAMERA_LOOK_FORWARD + shake1.x * 0.6, 1.1 + shake1.y * 0.6, shake1.z * 0.6);
+    }
+    if (cameraP2) {
+      const cam2X = halfDist + currentCameraBackOffset + stunBack2;
+      cameraP2.position?.set(cam2X + shake2.x, currentCameraHeight + shake2.y, shake2.z);
+      cameraP2.lookAt?.(cam2X - CAMERA_LOOK_FORWARD + shake2.x * 0.6, 1.1 + shake2.y * 0.6, shake2.z * 0.6);
+    }
+  }
+
+  function setPlayerDistance(distance) {
+    applyPlayerDistanceLayout(distance);
+    renderSplitView();
+    return currentPlayerDistance;
+  }
+
+  function setCameraOffset(updates = {}) {
+    const nextBack = Number(updates.back);
+    if (Number.isFinite(nextBack)) {
+      currentCameraBackOffset = nextBack;
+    }
+    const nextHeight = Number(updates.height);
+    if (Number.isFinite(nextHeight)) {
+      currentCameraHeight = nextHeight;
+    }
+    applyPlayerDistanceLayout(currentPlayerDistance);
+    renderSplitView();
+    return { back: currentCameraBackOffset, height: currentCameraHeight };
+  }
+
+  function setPlayerHeadOpacity(playerId, opacity) {
+    const mesh = meshes.get(playerId);
+    const headGroup = mesh?.userData?.headGroup;
+    headGroup?.userData?.setOpacity?.(opacity);
+  }
+
+  function setSelfHeadOpacity(opacity) {
+    const num = Number(opacity);
+    if (Number.isFinite(num)) {
+      currentSelfHeadOpacity = Math.min(1, Math.max(0, num));
+    }
+    renderSplitView();
+    return currentSelfHeadOpacity;
+  }
+
+  function setHeadOffsetZ(offsetZ) {
+    const num = Number(offsetZ);
+    if (Number.isFinite(num)) {
+      currentHeadOffsetZ = num;
+    }
+    for (const mesh of meshes.values()) {
+      const headGroup = mesh?.userData?.headGroup;
+      headGroup?.userData?.setOffsetZ?.(currentHeadOffsetZ);
+    }
+    renderSplitView();
+    return currentHeadOffsetZ;
+  }
+
+  function setHeadHitboxSize(updates = {}) {
+    for (const axis of ['x', 'y', 'z']) {
+      const val = Number(updates[axis]);
+      if (Number.isFinite(val) && val > 0) {
+        currentHeadHitboxSize[axis] = val;
+      }
+    }
+    renderFrontalSwordHud();
+    return { ...currentHeadHitboxSize };
+  }
+
+  function setAttackArmExtension(extension) {
+    const num = Number(extension);
+    if (Number.isFinite(num) && num >= 0) {
+      currentAttackArmExtension = num;
+    }
+    for (const [playerId, info] of receivedPlayerInfo.entries()) {
+      updatePose(playerId, info);
+    }
+    renderSplitView();
+    return currentAttackArmExtension;
+  }
+
+  function setDefenseSwordOffset(offset) {
+    const num = Number(offset);
+    if (Number.isFinite(num)) {
+      currentDefenseSwordOffset = num;
+      DEFENSE_HAND_OFFSET.z = num;
+    }
+    for (const [playerId, info] of receivedPlayerInfo.entries()) {
+      updatePose(playerId, info);
+    }
+    renderSplitView();
+    return currentDefenseSwordOffset;
+  }
+
+  function setStunCircleRadius(radius) {
+    const num = Number(radius);
+    if (Number.isFinite(num) && num >= 0) {
+      currentStunCircleRadius = num;
+    }
+    for (const [playerId, info] of receivedPlayerInfo.entries()) {
+      updatePose(playerId, info);
+    }
+    renderSplitView();
+    return currentStunCircleRadius;
+  }
 
   function initThree() {
     const THREE = root.THREE;
@@ -25,147 +172,78 @@
     if (renderer) { resizeThree(); return; }
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0e1715);
 
     const width = root.innerWidth || 1280;
     const height = root.innerHeight || 720;
     const halfWidth = Math.max(1, Math.floor(width / 2));
 
-    // 좌측 화면: 플레이어 1 시점 카메라 (플레이어 1 뒤에서 플레이어 2를 바라봄)
-    cameraP1 = new THREE.PerspectiveCamera(60, halfWidth / height, 0.1, 100);
-    cameraP1.position.set(-4.2, 2.3, 0);
-    cameraP1.lookAt(1.8, 1.1, 0);
+    const initialDist = root.InGameBack?.getPlayerDistance?.() ?? currentPlayerDistance;
+    currentPlayerDistance = Number.isFinite(Number(initialDist)) && Number(initialDist) > 0
+      ? Number(initialDist)
+      : 3.6;
+    const halfDist = currentPlayerDistance / 2;
 
-    // 우측 화면: 플레이어 2 시점 카메라 (플레이어 2 뒤에서 플레이어 1을 바라봄)
+    const camInit = root.InGameBack?.getCameraOffset?.();
+    if (camInit) {
+      if (Number.isFinite(Number(camInit.back))) currentCameraBackOffset = Number(camInit.back);
+      if (Number.isFinite(Number(camInit.height))) currentCameraHeight = Number(camInit.height);
+    }
+
+    // 좌측 화면: 플레이어 1 시점 카메라 (플레이어 1 뒤에서 일정한 각도로 정면을 바라봄)
+    const cam1X = -halfDist - currentCameraBackOffset;
+    cameraP1 = new THREE.PerspectiveCamera(60, halfWidth / height, 0.1, 100);
+    cameraP1.position.set(cam1X, currentCameraHeight, 0);
+    cameraP1.lookAt(cam1X + CAMERA_LOOK_FORWARD, 1.1, 0);
+
+    // 우측 화면: 플레이어 2 시점 카메라 (플레이어 2 뒤에서 일정한 각도로 정면을 바라봄)
+    const cam2X = halfDist + currentCameraBackOffset;
     cameraP2 = new THREE.PerspectiveCamera(60, (width - halfWidth) / height, 0.1, 100);
-    cameraP2.position.set(4.2, 2.3, 0);
-    cameraP2.lookAt(-1.8, 1.1, 0);
+    cameraP2.position.set(cam2X, currentCameraHeight, 0);
+    cameraP2.lookAt(cam2X - CAMERA_LOOK_FORWARD, 1.1, 0);
 
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setSize(width, height);
     if (root.devicePixelRatio) renderer.setPixelRatio(Math.min(root.devicePixelRatio, 2));
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.65));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
-    dirLight.position.set(4, 8, 6);
-    scene.add(dirLight);
+    // Graphic/Background.js 모듈을 사용해 배경 색상, 조명, 그리드 구성
+    root.BackgroundGraphic?.setupBackground(THREE, scene);
 
-    const grid = new THREE.GridHelper(12, 12, 0x3b7a62, 0x1f3a31);
-    scene.add(grid);
-
-    const positionLimbBetween = (limb, sx, sy, sz, tx, ty, tz, baseLen) => {
-      if (!limb) return;
-      const dx = tx - sx;
-      const dy = ty - sy;
-      const dz = tz - sz;
-      const len = Math.hypot(dx, dy, dz) || 0.001;
-      limb.position?.set((sx + tx) / 2, (sy + ty) / 2, (sz + tz) / 2);
-      if (limb.scale && baseLen > 0) {
-        limb.scale.y = len / baseLen;
-      }
-      if (THREE.Vector3 && limb.quaternion?.setFromUnitVectors) {
-        const up = new THREE.Vector3(0, 1, 0);
-        const dir = new THREE.Vector3(dx / len, dy / len, dz / len);
-        limb.quaternion.setFromUnitVectors(up, dir);
-      }
-    };
-
-    const createSwordMesh = (color, xPos, facingYRad) => {
-      // 플레이어가 상대방을 바라보는 기준 좌표계 (로컬 -Z가 정면, -X가 왼팔, +X가 오른팔, +Y가 위쪽)
+    // Graphic/Arm.js, Graphic/Head.js 및 Graphic/Sword.js 모듈을 사용해 양팔, 머리(구), 검 메쉬 구성
+    const createSwordMesh = (playerId, color, xPos, facingYRad) => {
       const baseGroup = new THREE.Group();
       baseGroup.position.set(xPos, 1.1, 0);
       baseGroup.rotation.y = facingYRad;
 
-      // 1) 양팔 스윙 중심 피벗 (몸통 정중앙 기준점)
-      const armPivot = new THREE.Group();
-      armPivot.position.set(ARM_PIVOT_OFFSET.x, ARM_PIVOT_OFFSET.y, ARM_PIVOT_OFFSET.z);
+      const arm = root.ArmGraphic.createArm(THREE);
+      const initialHeadOffsetZ = root.InGameBack?.getHeadOffsetZ?.() ?? currentHeadOffsetZ;
+      currentHeadOffsetZ = Number.isFinite(Number(initialHeadOffsetZ)) ? Number(initialHeadOffsetZ) : 0;
+      const headGroup = root.HeadGraphic?.createHead?.(THREE, color, currentHeadOffsetZ) || null;
+      const swordGroup = root.SwordGraphic.createSword(THREE, color, arm.baseWristOffset);
 
-      // 양쪽(왼팔/오른팔) 팔꿈치 관절 구체 & 양팔 전완 메쉬
-      let leftForearm = null;
-      let rightForearm = null;
-      const defaultLimbLen = Math.hypot(
-        SHOULDER_HALF_WIDTH,
-        WRIST_BASE_OFFSET.y,
-        WRIST_BASE_OFFSET.z
-      );
-
-      if (THREE.SphereGeometry && THREE.CylinderGeometry) {
-        const jointMat = new THREE.MeshStandardMaterial({ color: 0x8ecab1, roughness: 0.5 });
-        const leftJoint = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 12), jointMat);
-        leftJoint.position.set(-SHOULDER_HALF_WIDTH, 0, 0);
-        const rightJoint = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 12), jointMat);
-        rightJoint.position.set(SHOULDER_HALF_WIDTH, 0, 0);
-        armPivot.add(leftJoint, rightJoint);
-
-        const limbMat = new THREE.MeshStandardMaterial({ color: 0x35584c, roughness: 0.6 });
-        leftForearm = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.042, 0.058, defaultLimbLen, 10),
-          limbMat
-        );
-        rightForearm = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.042, 0.058, defaultLimbLen, 10),
-          limbMat
-        );
-
-        positionLimbBetween(
-          leftForearm,
-          -SHOULDER_HALF_WIDTH, 0, 0,
-          WRIST_BASE_OFFSET.x, WRIST_BASE_OFFSET.y, WRIST_BASE_OFFSET.z,
-          defaultLimbLen
-        );
-        positionLimbBetween(
-          rightForearm,
-          SHOULDER_HALF_WIDTH, 0, 0,
-          WRIST_BASE_OFFSET.x, WRIST_BASE_OFFSET.y, WRIST_BASE_OFFSET.z,
-          defaultLimbLen
-        );
-        armPivot.add(leftForearm, rightForearm);
+      if (headGroup) {
+        arm.armPivot.add(headGroup);
       }
-
-      // 2) 양손 손목 & 검 그룹 (양팔이 모이는 끝점에 위치하여 스윙 시 검의 3D 위치가 대칭으로 이동함)
-      const swordGroup = new THREE.Group();
-      swordGroup.position.set(WRIST_BASE_OFFSET.x, WRIST_BASE_OFFSET.y, WRIST_BASE_OFFSET.z);
-
-      // 기본 자세(0, 0, 0, 1 - 핸드폰 화면을 위로 놓은 상태)일 때:
-      // - 핸드폰 윗부분(-Z) = 검날이 앞으로 뻗는 방향(-Z)
-      // - 핸드폰 오른쪽 면(+Y) = 위쪽(하늘 방향)을 향하고,
-      // - 핸드폰 화면/카메라 면(±X) = 검의 넓은 좌/우 옆면(±X)이 되도록 세로형 검 단면으로 구성
-      const blade = new THREE.Mesh(
-        new THREE.BoxGeometry(0.06, 0.22, 2.2),
-        new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.3 })
-      );
-      blade.position.z = -1.1;
-
-      const guard = new THREE.Mesh(
-        new THREE.BoxGeometry(0.24, 0.55, 0.12),
-        new THREE.MeshStandardMaterial({ color: 0xd9a441 })
-      );
-
-      const handle = new THREE.Mesh(
-        new THREE.BoxGeometry(0.08, 0.12, 0.45),
-        new THREE.MeshStandardMaterial({ color: 0x5c3d2e, roughness: 0.7 })
-      );
-      handle.position.z = 0.25;
-
-      swordGroup.add(blade, guard, handle);
-      armPivot.add(swordGroup);
-      baseGroup.add(armPivot);
+      arm.armPivot.add(swordGroup);
+      baseGroup.add(arm.armPivot);
       scene.add(baseGroup);
+      playerGroups.set(playerId, baseGroup);
 
-      // armPivot(양팔 스윙 -> 검 위치 이동), 양팔 메쉬, swordGroup(손목 회전 -> 검 각도)을 함께 제어
       swordGroup.userData = {
-        armPivot,
-        leftForearm,
-        rightForearm,
-        defaultLimbLen,
-        positionLimbBetween,
-        baseWristOffset: { ...WRIST_BASE_OFFSET },
+        baseGroup,
+        armPivot: arm.armPivot,
+        headGroup,
+        leftForearm: arm.leftForearm,
+        rightForearm: arm.rightForearm,
+        defaultLimbLen: arm.defaultLimbLen,
+        positionLimbBetween: arm.positionLimbBetween,
+        updateLimbs: arm.updateLimbs,
+        baseWristOffset: arm.baseWristOffset,
       };
       return swordGroup;
     };
 
-    meshes.set('PLAYER_1', createSwordMesh(0x4fd1a5, -1.8, -Math.PI / 2));
-    meshes.set('PLAYER_2', createSwordMesh(0xf28b66, 1.8, Math.PI / 2));
+    meshes.set('PLAYER_1', createSwordMesh('PLAYER_1', 0x4fd1a5, -halfDist, -Math.PI / 2));
+    meshes.set('PLAYER_2', createSwordMesh('PLAYER_2', 0xf28b66, halfDist, Math.PI / 2));
 
     root.addEventListener?.('resize', resizeThree);
   }
@@ -194,12 +272,16 @@
 
     renderer.setScissorTest?.(true);
 
-    // 좌측: 플레이어 1 화면
+    // 좌측: 플레이어 1 화면 (본인 PLAYER_1 머리는 설정된 불투명도 적용, 상대 PLAYER_2 머리는 1.0)
+    setPlayerHeadOpacity('PLAYER_1', currentSelfHeadOpacity);
+    setPlayerHeadOpacity('PLAYER_2', 1.0);
     renderer.setViewport?.(0, 0, halfWidth, height);
     renderer.setScissor?.(0, 0, halfWidth, height);
     renderer.render(scene, cameraP1);
 
-    // 우측: 플레이어 2 화면
+    // 우측: 플레이어 2 화면 (본인 PLAYER_2 머리는 설정된 불투명도 적용, 상대 PLAYER_1 머리는 1.0)
+    setPlayerHeadOpacity('PLAYER_1', 1.0);
+    setPlayerHeadOpacity('PLAYER_2', currentSelfHeadOpacity);
     renderer.setViewport?.(halfWidth, 0, rightWidth, height);
     renderer.setScissor?.(halfWidth, 0, rightWidth, height);
     renderer.render(scene, cameraP2);
@@ -221,12 +303,159 @@
     return !overlay.hidden;
   }
 
+  function toggleFrontalSwordHud(forceOpen) {
+    const hud = $('frontal-sword-hud');
+    if (!hud) return false;
+    const willOpen = forceOpen !== undefined ? Boolean(forceOpen) : Boolean(hud.hidden);
+    hud.hidden = !willOpen;
+    if (willOpen) {
+      renderFrontalSwordHud();
+    }
+    return willOpen;
+  }
+
+  function buildFrontalSvgMarkup(ownSeg, oppSeg, ownColor, oppColor, mirrorX = false, headBox = { x: 0, y: 0.44, width: 0.88, height: 0.88 }) {
+    const signX = mirrorX ? -1 : 1;
+    const ox1 = ((ownSeg?.handle?.x || 0) * signX).toFixed(2);
+    const oy1 = (-(ownSeg?.handle?.y || 0)).toFixed(2);
+    const ox2 = ((ownSeg?.tip?.x || 0) * signX).toFixed(2);
+    const oy2 = (-(ownSeg?.tip?.y || 0)).toFixed(2);
+
+    const tx1 = ((oppSeg?.handle?.x || 0) * signX).toFixed(2);
+    const ty1 = (-(oppSeg?.handle?.y || 0)).toFixed(2);
+    const tx2 = ((oppSeg?.tip?.x || 0) * signX).toFixed(2);
+    const ty2 = (-(oppSeg?.tip?.y || 0)).toFixed(2);
+
+    const bw = Number(headBox?.width ?? 0.88);
+    const bh = Number(headBox?.height ?? 0.88);
+    const cx = Number(headBox?.x || 0) * signX;
+    const cy = -Number(headBox?.y ?? 0.44);
+    const rx = (cx - bw / 2).toFixed(2);
+    const ry = (cy - bh / 2).toFixed(2);
+
+    return [
+      '<svg viewBox="-2.6 -2.6 5.2 5.2" role="img" aria-label="정면 검 선분 및 머리 직육면체 히트박스">',
+      '<line x1="-2.6" y1="0" x2="2.6" y2="0" stroke="rgba(255,255,255,0.12)" stroke-width="0.04"/>',
+      '<line x1="0" y1="-2.6" x2="0" y2="2.6" stroke="rgba(255,255,255,0.12)" stroke-width="0.04"/>',
+      `<rect x="${rx}" y="${ry}" width="${bw.toFixed(2)}" height="${bh.toFixed(2)}" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.45)" stroke-width="0.05" stroke-dasharray="0.12 0.08"/>`,
+      `<line x1="${tx1}" y1="${ty1}" x2="${tx2}" y2="${ty2}" stroke="${oppColor}" stroke-width="0.11" stroke-linecap="round" stroke-opacity="0.55" stroke-dasharray="0.18 0.12"/>`,
+      `<circle cx="${tx1}" cy="${ty1}" r="0.13" fill="${oppColor}" fill-opacity="0.55"/>`,
+      `<line x1="${ox1}" y1="${oy1}" x2="${ox2}" y2="${oy2}" stroke="${ownColor}" stroke-width="0.16" stroke-linecap="round"/>`,
+      `<circle cx="${ox1}" cy="${oy1}" r="0.18" fill="#d9a441" stroke="${ownColor}" stroke-width="0.06"/>`,
+      `<circle cx="${ox2}" cy="${oy2}" r="0.1" fill="#ffffff"/>`,
+      '</svg>',
+    ].join('');
+  }
+
+  function renderFrontalSwordHud() {
+    const hud = $('frontal-sword-hud');
+    if (!hud || hud.hidden) return;
+
+    const p1 = receivedPlayerInfo.get('PLAYER_1') || root.InGameBack?.getPlayerData?.('PLAYER_1');
+    const p2 = receivedPlayerInfo.get('PLAYER_2') || root.InGameBack?.getPlayerData?.('PLAYER_2');
+    const seg1 = p1?.frontalSegment || p1?.swordCollider?.frontalSegment || { handle: { x: 0, y: 0 }, tip: { x: 0, y: 0 } };
+    const seg2 = p2?.frontalSegment || p2?.swordCollider?.frontalSegment || { handle: { x: 0, y: 0 }, tip: { x: 0, y: 0 } };
+
+    const angleDeg = root.InGameBack?.computeFrontalSwordAngleDeg?.(p1, p2);
+    const thresh = root.InGameBack?.getDefenseAngleThreshold?.() ?? currentDefenseAngleThreshold;
+    const angleText = angleDeg !== null && angleDeg !== undefined
+      ? `두 검 각도: ${Number(angleDeg).toFixed(1)}° (방어기준 90°±${thresh}°)`
+      : `두 검 각도: — (방어기준 90°±${thresh}°)`;
+
+    const p1State = p1?.state || 'IDLE';
+    const p1Dur = Number(p1?.stateDuration || 0).toFixed(2);
+    const p2State = p2?.state || 'IDLE';
+    const p2Dur = Number(p2?.stateDuration || 0).toFixed(2);
+
+    const boxSize = root.InGameBack?.getHeadHitboxSize?.() ?? currentHeadHitboxSize;
+    const defaultBoxW = Number(boxSize.x) > 0 ? Number(boxSize.x) : 0.88;
+    const defaultBoxH = Number(boxSize.y) > 0 ? Number(boxSize.y) : 0.88;
+    const defaultCenterY = 0.88 - defaultBoxH / 2;
+    const headBox1 = {
+      x: p1?.headCollider?.frontalCenter?.x ?? 0,
+      y: p1?.headCollider?.frontalCenter?.y ?? defaultCenterY,
+      width: p1?.headCollider?.size?.x ?? defaultBoxW,
+      height: p1?.headCollider?.size?.y ?? defaultBoxH,
+    };
+    const headBox2 = {
+      x: p2?.headCollider?.frontalCenter?.x ?? 0,
+      y: p2?.headCollider?.frontalCenter?.y ?? defaultCenterY,
+      width: p2?.headCollider?.size?.x ?? defaultBoxW,
+      height: p2?.headCollider?.size?.y ?? defaultBoxH,
+    };
+
+    if ($('frontal-svg-p1')) {
+      $('frontal-svg-p1').innerHTML = buildFrontalSvgMarkup(seg1, seg2, '#4fd1a5', '#f28b66', false, headBox1);
+    }
+    if ($('frontal-svg-p2')) {
+      $('frontal-svg-p2').innerHTML = buildFrontalSvgMarkup(seg2, seg1, '#f28b66', '#4fd1a5', true, headBox2);
+    }
+    if ($('frontal-state-p1')) $('frontal-state-p1').textContent = `상태: ${p1State} (${p1Dur}s)`;
+    if ($('frontal-state-p2')) $('frontal-state-p2').textContent = `상태: ${p2State} (${p2Dur}s)`;
+    if ($('frontal-angle-p1')) $('frontal-angle-p1').textContent = angleText;
+    if ($('frontal-angle-p2')) $('frontal-angle-p2').textContent = angleText;
+  }
+
   function syncDurationInputs() {
     const dur = root.InGameBack?.JUDGMENT_DURATION;
-    if (!dur) return;
-    if ($('dur-attack-hit')) $('dur-attack-hit').value = String(dur.ATTACK_SUCCESS_HIT ?? 1.0);
-    if ($('dur-attack-fail')) $('dur-attack-fail').value = String(dur.ATTACK_FAIL_STUN ?? 1.0);
-    if ($('dur-parry-stun')) $('dur-parry-stun').value = String(dur.PARRY_STUN ?? 1.0);
+    if (dur) {
+      if ($('dur-attack')) $('dur-attack').value = String(dur.ATTACK ?? 0.5);
+      if ($('dur-attack-hit')) $('dur-attack-hit').value = String(dur.ATTACK_SUCCESS_HIT ?? 1.0);
+      if ($('dur-attack-fail')) $('dur-attack-fail').value = String(dur.ATTACK_FAIL_STUN ?? 1.0);
+      if ($('dur-parry-stun')) $('dur-parry-stun').value = String(dur.PARRY_STUN ?? 1.0);
+    }
+    const mult = root.InGameBack?.getArmSwingMultiplier?.();
+    if (mult !== undefined && $('arm-swing-multiplier')) {
+      $('arm-swing-multiplier').value = String(mult);
+    }
+    const armExt = root.InGameBack?.getAttackArmExtension?.() ?? currentAttackArmExtension;
+    if (armExt !== undefined && $('attack-arm-extension')) {
+      $('attack-arm-extension').value = String(armExt);
+    }
+    const defOffset = root.InGameBack?.getDefenseSwordOffset?.() ?? currentDefenseSwordOffset;
+    if (defOffset !== undefined && $('defense-sword-offset')) {
+      $('defense-sword-offset').value = String(defOffset);
+    }
+    const defAngle = root.InGameBack?.getDefenseAngleThreshold?.() ?? currentDefenseAngleThreshold;
+    if (defAngle !== undefined && $('defense-angle-threshold')) {
+      $('defense-angle-threshold').value = String(defAngle);
+    }
+    const stunRad = root.InGameBack?.getStunCircleRadius?.() ?? currentStunCircleRadius;
+    if (stunRad !== undefined && $('stun-circle-radius')) {
+      $('stun-circle-radius').value = String(stunRad);
+    }
+    const dist = root.InGameBack?.getPlayerDistance?.() ?? currentPlayerDistance;
+    if (dist !== undefined && $('player-distance')) {
+      $('player-distance').value = String(dist);
+    }
+    const headOpacity = root.InGameBack?.getSelfHeadOpacity?.() ?? currentSelfHeadOpacity;
+    if (headOpacity !== undefined && $('self-head-opacity')) {
+      $('self-head-opacity').value = String(headOpacity);
+    }
+    const headOffset = root.InGameBack?.getHeadOffsetZ?.() ?? currentHeadOffsetZ;
+    if (headOffset !== undefined && $('head-offset-z')) {
+      $('head-offset-z').value = String(headOffset);
+    }
+    const headBox = root.InGameBack?.getHeadHitboxSize?.() ?? currentHeadHitboxSize;
+    if (headBox) {
+      if ($('head-box-x')) $('head-box-x').value = String(headBox.x ?? 0.88);
+      if ($('head-box-y')) $('head-box-y').value = String(headBox.y ?? 0.88);
+      if ($('head-box-z')) $('head-box-z').value = String(headBox.z ?? 0.88);
+    }
+    const camOffset = root.InGameBack?.getCameraOffset?.() ?? {
+      back: currentCameraBackOffset,
+      height: currentCameraHeight,
+    };
+    if (camOffset) {
+      if ($('camera-back-offset')) $('camera-back-offset').value = String(camOffset.back ?? 2.4);
+      if ($('camera-height')) $('camera-height').value = String(camOffset.height ?? 2.3);
+    }
+    const angThresh = root.InGameBack?.getAttackAngularThreshold?.();
+    if (angThresh) {
+      if ($('ang-vel-thresh-x')) $('ang-vel-thresh-x').value = String(angThresh.x ?? 5.0);
+      if ($('ang-vel-thresh-y')) $('ang-vel-thresh-y').value = String(angThresh.y ?? 5.0);
+      if ($('ang-vel-thresh-z')) $('ang-vel-thresh-z').value = String(angThresh.z ?? 5.0);
+    }
   }
 
   function toggleDurationPanel(forceOpen) {
@@ -248,13 +477,122 @@
 
     const applyDurationFromInputs = () => {
       root.InGameBack?.setJudgmentDurations?.({
+        ATTACK: $('dur-attack')?.value,
         ATTACK_SUCCESS_HIT: $('dur-attack-hit')?.value,
         ATTACK_FAIL_STUN: $('dur-attack-fail')?.value,
         PARRY_STUN: $('dur-parry-stun')?.value,
       });
+      if ($('arm-swing-multiplier')) {
+        root.InGameBack?.setArmSwingMultiplier?.($('arm-swing-multiplier').value);
+      }
+      if ($('attack-arm-extension')) {
+        const nextExt = $('attack-arm-extension').value;
+        if (root.InGameBack?.setAttackArmExtension) {
+          root.InGameBack.setAttackArmExtension(nextExt);
+        } else {
+          setAttackArmExtension(nextExt);
+        }
+      }
+      if ($('defense-sword-offset')) {
+        const nextDefOffset = $('defense-sword-offset').value;
+        if (root.InGameBack?.setDefenseSwordOffset) {
+          root.InGameBack.setDefenseSwordOffset(nextDefOffset);
+        } else {
+          setDefenseSwordOffset(nextDefOffset);
+        }
+      }
+      if ($('defense-angle-threshold')) {
+        const nextAngle = Number($('defense-angle-threshold').value);
+        if (Number.isFinite(nextAngle) && nextAngle >= 0) {
+          currentDefenseAngleThreshold = nextAngle;
+          root.InGameBack?.setDefenseAngleThreshold?.(nextAngle);
+          renderFrontalSwordHud();
+        }
+      }
+      if ($('stun-circle-radius')) {
+        const nextStunRad = $('stun-circle-radius').value;
+        if (root.InGameBack?.setStunCircleRadius) {
+          root.InGameBack.setStunCircleRadius(nextStunRad);
+        } else {
+          setStunCircleRadius(nextStunRad);
+        }
+      }
+      if ($('player-distance')) {
+        const nextDist = $('player-distance').value;
+        if (root.InGameBack?.setPlayerDistance) {
+          root.InGameBack.setPlayerDistance(nextDist);
+        } else {
+          setPlayerDistance(nextDist);
+        }
+      }
+      if ($('self-head-opacity')) {
+        const nextOpacity = $('self-head-opacity').value;
+        if (root.InGameBack?.setSelfHeadOpacity) {
+          root.InGameBack.setSelfHeadOpacity(nextOpacity);
+        } else {
+          setSelfHeadOpacity(nextOpacity);
+        }
+      }
+      if ($('head-offset-z')) {
+        const nextOffsetZ = $('head-offset-z').value;
+        if (root.InGameBack?.setHeadOffsetZ) {
+          root.InGameBack.setHeadOffsetZ(nextOffsetZ);
+        } else {
+          setHeadOffsetZ(nextOffsetZ);
+        }
+      }
+      if ($('head-box-x') || $('head-box-y') || $('head-box-z')) {
+        const boxUpdates = {
+          x: $('head-box-x')?.value,
+          y: $('head-box-y')?.value,
+          z: $('head-box-z')?.value,
+        };
+        if (root.InGameBack?.setHeadHitboxSize) {
+          root.InGameBack.setHeadHitboxSize(boxUpdates);
+        } else {
+          setHeadHitboxSize(boxUpdates);
+        }
+      }
+      if ($('camera-back-offset') || $('camera-height')) {
+        const camUpdates = {
+          back: $('camera-back-offset')?.value,
+          height: $('camera-height')?.value,
+        };
+        if (root.InGameBack?.setCameraOffset) {
+          root.InGameBack.setCameraOffset(camUpdates);
+        } else {
+          setCameraOffset(camUpdates);
+        }
+      }
+      root.InGameBack?.setAttackAngularThreshold?.({
+        x: $('ang-vel-thresh-x')?.value,
+        y: $('ang-vel-thresh-y')?.value,
+        z: $('ang-vel-thresh-z')?.value,
+      });
     };
 
-    for (const inputId of ['dur-attack-hit', 'dur-attack-fail', 'dur-parry-stun']) {
+    for (const inputId of [
+      'dur-attack',
+      'dur-attack-hit',
+      'dur-attack-fail',
+      'dur-parry-stun',
+      'arm-swing-multiplier',
+      'attack-arm-extension',
+      'defense-sword-offset',
+      'defense-angle-threshold',
+      'stun-circle-radius',
+      'player-distance',
+      'self-head-opacity',
+      'head-offset-z',
+      'head-box-x',
+      'head-box-y',
+      'head-box-z',
+      'camera-back-offset',
+      'camera-height',
+      'ang-vel-thresh-x',
+      'ang-vel-thresh-y',
+      'ang-vel-thresh-z',
+    ]) {
       $(inputId)?.addEventListener?.('input', applyDurationFromInputs);
       $(inputId)?.addEventListener?.('change', applyDurationFromInputs);
     }
@@ -272,6 +610,11 @@
         if (!isEditingInput) {
           event.preventDefault?.();
           toggleOverlay();
+        }
+      } else if (event.key === '9' || event.code === 'Digit9' || event.code === 'Numpad9') {
+        if (!isEditingInput) {
+          event.preventDefault?.();
+          toggleFrontalSwordHud();
         }
       } else if (event.key === '0' || event.code === 'Digit0' || event.code === 'Numpad0') {
         if (!isEditingInput) {
@@ -357,6 +700,25 @@
     };
   }
 
+  function multiplyQuat(a, b) {
+    return {
+      x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+      y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+      z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+      w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+    };
+  }
+
+  function invertQuat(q) {
+    const len = Math.hypot(q.x, q.y, q.z, q.w) || 1;
+    return {
+      x: -q.x / len,
+      y: -q.y / len,
+      z: -q.z / len,
+      w: q.w / len,
+    };
+  }
+
   // 핸드폰 기본 파지 자세 매핑:
   function mapGripQuaternion(q) {
     // 1) 축 매핑 (둘 다 -를 유지해야 90도 회전 시 축이 뒤바뀌지 않음)
@@ -403,47 +765,177 @@
     if (!mesh) return;
 
     const armPivot = mesh.userData?.armPivot;
-    const leftForearm = mesh.userData?.leftForearm;
-    const rightForearm = mesh.userData?.rightForearm;
-    const defaultLimbLen = mesh.userData?.defaultLimbLen || 1;
-    const positionLimbBetween = mesh.userData?.positionLimbBetween;
     const baseWrist = mesh.userData?.baseWristOffset;
     const isDefending = data.state === 'DEFENSE' || data.state === 'STUN_DEFENSE' || data.button === 1;
 
-    if (armPivot && armPivot.quaternion?.set && mesh.quaternion?.set) {
-      // 1) 양팔 스윙(55%): 몸통 중앙 피벗이 회전하여 검 손잡이의 3D 위치를 좌/우 대칭 호(Arc)를 그리며 이동시킴
-      const armQuat = slerpFromIdentity(q, 0.55);
-      armPivot.quaternion.set(armQuat.x, armQuat.y, armQuat.z, armQuat.w).normalize();
+    if (armPivot && mesh.quaternion?.set) {
+      const qLen = Math.hypot(q.x, q.y, q.z, q.w) || 1;
+      let qn = { x: q.x / qLen, y: q.y / qLen, z: q.z / qLen, w: q.w / qLen };
 
-      // 2) 손목 회전(45%): 양팔 회전(55%)과 합쳐져 검날이 정확히 목표 쿼터니언(100%) 방향을 향하도록 회전
-      const wristQuat = slerpFromIdentity(q, 0.45);
-      mesh.quaternion.set(wristQuat.x, wristQuat.y, wristQuat.z, wristQuat.w).normalize();
+      const q0 = mapGripQuaternion({ x: 0, y: 0, z: 0, w: 1 });
+      const q0Len = Math.hypot(q0.x, q0.y, q0.z, q0.w) || 1;
+      const q0n = { x: q0.x / q0Len, y: q0.y / q0Len, z: q0.z / q0Len, w: q0.w / q0Len };
 
-      // 3) 방어 시 현재 검날 방향 기준 오프셋(DEFENSE_HAND_OFFSET)만큼 양손 위치를 이동
-      if (baseWrist && mesh.position?.set) {
-        let wx = baseWrist.x;
-        let wy = baseWrist.y;
-        let wz = baseWrist.z;
+      const forwardVec = { x: 0, y: 0, z: -1 };
+      const baseDir = rotateVectorByQuat(forwardVec, q0n);
+      let bladeDir = rotateVectorByQuat(forwardVec, qn);
 
-        if (isDefending) {
-          const shift = rotateVectorByQuat(DEFENSE_HAND_OFFSET, wristQuat);
-          wx += shift.x;
-          wy += shift.y;
-          wz += shift.z;
-        } else {
-          const accelMag = data.acceleration
-            ? Math.max(0, Number(data.acceleration.x) || 0)
-            : 0;
-          const lunge = Math.min(0, accelMag * 0.022); //공격시 런지거리 조절
-          wz -= lunge;
-        }
+      const baseArmRadius = Math.abs(baseWrist?.z) || 0.95;
 
-        mesh.position.set(wx, wy, wz);
-        if (typeof positionLimbBetween === 'function') {
-          positionLimbBetween(leftForearm, -SHOULDER_HALF_WIDTH, 0, 0, wx, wy, wz, defaultLimbLen);
-          positionLimbBetween(rightForearm, SHOULDER_HALF_WIDTH, 0, 0, wx, wy, wz, defaultLimbLen);
+      // 기절(STUN) 상태일 때(단, 기절중 방어 STUN_DEFENSE 제외) 중앙 원 안으로 검이 들어오지 못하고 항상 검끝이 바깥쪽을 향하도록 보정
+      const isPureStun = data.state === 'STUN';
+      const stunRadius = Number.isFinite(Number(data.stunCircleRadius))
+        ? Number(data.stunCircleRadius)
+        : (root.InGameBack?.getStunCircleRadius?.() ?? currentStunCircleRadius);
+      let stunOutwardAngle = Math.PI / 2;
+      if (isPureStun && root.InGameBack?.applyStunCircleConstraint) {
+        const constrained = root.InGameBack.applyStunCircleConstraint(
+          qn,
+          baseDir,
+          bladeDir,
+          stunRadius,
+          baseArmRadius
+        );
+        qn = constrained.qn;
+        bladeDir = constrained.bladeDir;
+        if (Number.isFinite(constrained.angle)) {
+          stunOutwardAngle = constrained.angle;
         }
       }
+
+      const isStunned = data.state === 'STUN' || data.state === 'STUN_DEFENSE';
+      const stunRemaining = isStunned ? Math.max(0, Number(data.stateDuration) || 0) : 0;
+      const stunPhase = stunRemaining * 68;
+      const stunTremorIntensity = stunRemaining > 0 ? Math.min(1, 0.35 + stunRemaining * 0.65) : 0;
+
+      // 1) 검 회전: 검날은 목표 쿼터니언(qn) 방향을 향하며, 기절 시에는 고주파 떨림 회전(jitter) 추가
+      if (stunTremorIntensity > 0) {
+        const jx = Math.cos(stunPhase * 2.1) * 0.034 * stunTremorIntensity;
+        const jy = Math.sin(stunPhase * 1.9) * 0.034 * stunTremorIntensity;
+        const jz = Math.sin(stunPhase * 2.7) * 0.026 * stunTremorIntensity;
+        const jq = multiplyQuat(qn, { x: jx, y: jy, z: jz, w: 1 });
+        const jqLen = Math.hypot(jq.x, jq.y, jq.z, jq.w) || 1;
+        mesh.quaternion.set(jq.x / jqLen, jq.y / jqLen, jq.z / jqLen, jq.w / jqLen);
+      } else {
+        mesh.quaternion.set(qn.x, qn.y, qn.z, qn.w);
+      }
+
+      // 2) 검끝 3D 방향 벡터 기반 양손 위치 이동:
+      if (baseWrist && mesh.position?.set) {
+        const armMultiplier = Number.isFinite(Number(data.armSwingMultiplier))
+          ? Number(data.armSwingMultiplier)
+          : (root.InGameBack?.getArmSwingMultiplier?.() ?? 0.55);
+
+        const isAttacking = data.state === 'ATTACK';
+        const targetExtension = isAttacking
+          ? Math.max(0, Number.isFinite(Number(data.attackArmExtension))
+            ? Number(data.attackArmExtension)
+            : (root.InGameBack?.getAttackArmExtension?.() ?? currentAttackArmExtension))
+          : 0;
+        const prevExtension = playerArmExtensions.get(playerId) || 0;
+        let currentExtension;
+        if (targetExtension >= prevExtension) {
+          // 공격 판정으로 팔이 늘어날 때는 즉시 최대 길이로 확장
+          currentExtension = targetExtension;
+        } else {
+          // 공격 이후 팔이 줄어들 때는 감속 보간(Ease-Out)으로 자연스럽게 축소
+          const step = Math.max((prevExtension - targetExtension) * ARM_RETRACT_SMOOTHING, 0.005);
+          currentExtension = Math.max(targetExtension, prevExtension - step);
+        }
+        playerArmExtensions.set(playerId, currentExtension);
+
+        const armRadius = Math.max(0.1, baseArmRadius + currentExtension);
+        let dx = (bladeDir.x - baseDir.x) * armRadius * armMultiplier;
+        let dy = (bladeDir.y - baseDir.y) * armRadius * armMultiplier;
+
+        // 기절(STUN) 시 손잡이(손목) 위치도 중앙 진입금지 원 바깥에서 검끝과 동일한 방사형 바깥 각도(stunOutwardAngle)로 정렬
+        if (isPureStun) {
+          const minWristR = Math.min(armRadius * 0.9, Math.max(0, stunRadius));
+          const wristDist = Math.max(Math.hypot(dx, dy), minWristR);
+          dx = Math.cos(stunOutwardAngle) * wristDist;
+          dy = Math.sin(stunOutwardAngle) * wristDist;
+        }
+
+        const xySq = Math.min(armRadius * armRadius * 0.92, dx * dx + dy * dy);
+
+        let wx = baseWrist.x + dx;
+        let wy = baseWrist.y + dy;
+        let wz = -Math.sqrt(Math.max(0.04, armRadius * armRadius - xySq));
+
+        if (stunTremorIntensity > 0) {
+          wx += Math.sin(stunPhase * 1.7) * 0.028 * stunTremorIntensity;
+          wy += Math.cos(stunPhase * 2.3) * 0.028 * stunTremorIntensity;
+          wz += Math.sin(stunPhase * 1.3) * 0.016 * stunTremorIntensity;
+        }
+
+        // 팔(손목) 위치는 원래 길이대로 앞쪽에 유지하고, 방어 시에는 검만 검 손잡이 방향(+Z)으로 이동
+        let sx = wx;
+        let sy = wy;
+        let sz = wz;
+        if (isDefending) {
+          const defenseOffsetZ = Number.isFinite(Number(data.defenseSwordOffset))
+            ? Number(data.defenseSwordOffset)
+            : (root.InGameBack?.getDefenseSwordOffset?.() ?? currentDefenseSwordOffset);
+          const shift = rotateVectorByQuat(
+            { x: DEFENSE_HAND_OFFSET.x, y: DEFENSE_HAND_OFFSET.y, z: defenseOffsetZ },
+            qn
+          );
+          sx += shift.x;
+          sy += shift.y;
+          sz += shift.z;
+        }
+
+        if (stunTremorIntensity > 0) {
+          sx += Math.sin(stunPhase * 2.4) * 0.022 * stunTremorIntensity;
+          sy += Math.cos(stunPhase * 2.9) * 0.022 * stunTremorIntensity;
+        }
+
+        mesh.position.set(sx, sy, sz);
+        mesh.userData?.updateLimbs?.(wx, wy, wz);
+      }
+
+      // 3) 피격(HIT) 시 검이 맞은 방향(hitImpact)에 따라 머리(구)와 카메라가 흔들리는 효과 적용
+      const headGroup = mesh.userData?.headGroup;
+      if (data.state === 'HIT' && Number(data.stateDuration) > 0 && data.hitImpact) {
+        const totalDur = Math.max(0.05, Number(data.hitImpact.totalDuration) || 1.0);
+        const remaining = Math.max(0, Number(data.stateDuration) || 0);
+        const elapsed = Math.max(0, totalDur - remaining);
+        const decay = Math.pow(Math.min(1, remaining / totalDur), 1.25);
+        const knock = Math.sin(Math.min(1, elapsed / 0.1) * Math.PI * 0.5) * decay;
+        const osc = Math.cos(elapsed * 44) * decay;
+        const factor = 0.55 * knock + 0.45 * osc;
+
+        const lDir = data.hitImpact.localDir || { x: 0, y: 0, z: 1 };
+        const wDir = data.hitImpact.worldDir || { x: 0, y: 0, z: 0 };
+
+        headGroup?.userData?.setShakeOffset?.(
+          lDir.x * factor * 0.28,
+          lDir.y * factor * 0.28,
+          lDir.z * factor * 0.28
+        );
+        cameraShakeOffsets[playerId] = {
+          x: wDir.x * factor * 0.36,
+          y: wDir.y * factor * 0.36,
+          z: wDir.z * factor * 0.36,
+        };
+      } else {
+        headGroup?.userData?.setShakeOffset?.(0, 0, 0);
+        cameraShakeOffsets[playerId] = { x: 0, y: 0, z: 0 };
+      }
+
+      // 4) 기절(STUN 또는 STUN_DEFENSE) 시 카메라가 뒤로 살짝 빠지는 효과 적용
+      const prevPullback = Number(cameraStunPullbacks[playerId]) || 0;
+      const targetPullback = isStunned && Number(data.stateDuration) > 0
+        ? STUN_CAMERA_PULLBACK_MAX
+        : 0;
+      if (targetPullback > prevPullback) {
+        cameraStunPullbacks[playerId] = prevPullback + (targetPullback - prevPullback) * 0.35;
+      } else {
+        const step = Math.max((prevPullback - targetPullback) * 0.16, 0.005);
+        cameraStunPullbacks[playerId] = Math.max(0, prevPullback - step);
+      }
+
+      applyPlayerDistanceLayout(currentPlayerDistance);
     } else if (mesh.quaternion?.set) {
       mesh.quaternion.set(q.x, q.y, q.z, q.w).normalize();
     }
@@ -457,6 +949,7 @@
       }
       updatePose(playerId, info);
     }
+    renderFrontalSwordHud();
     renderSplitView();
   }
 
@@ -489,6 +982,7 @@
 
       const playerInfo = receivedPlayerInfo.get(s.id) || root.InGameBack?.getPlayerData?.(s.id);
       const q = receivedAngles.get(s.id) || playerInfo?.tilt || { x: 0, y: 0, z: 0, w: 1 };
+      const av = playerInfo?.angularVelocity || { x: 0, y: 0, z: 0 };
 
       const angleBox = document.createElement('p');
       angleBox.className = 'sword-angle-info';
@@ -502,7 +996,14 @@
         : '';
       angleBox.textContent = `검 쿼터니언(XYZW): X ${qx} · Y ${qy} · Z ${qz} · W ${qw}${gameState}${durationText}`;
 
-      card.append(heading, meta, pre, angleBox);
+      const angVelBox = document.createElement('p');
+      angVelBox.className = 'sword-angle-info';
+      const avx = Number(av.x || 0).toFixed(2);
+      const avy = Number(av.y || 0).toFixed(2);
+      const avz = Number(av.z || 0).toFixed(2);
+      angVelBox.textContent = `검 각속도(XYZ): X ${avx} · Y ${avy} · Z ${avz}`;
+
+      card.append(heading, meta, pre, angleBox, angVelBox);
       container.append(card);
     }
   }
@@ -512,7 +1013,25 @@
     stop,
     updatePose,
     updateGraphics,
+    setPlayerDistance,
+    getPlayerDistance: () => currentPlayerDistance,
+    setCameraOffset,
+    getCameraOffset: () => ({ back: currentCameraBackOffset, height: currentCameraHeight }),
+    setSelfHeadOpacity,
+    getSelfHeadOpacity: () => currentSelfHeadOpacity,
+    setHeadOffsetZ,
+    getHeadOffsetZ: () => currentHeadOffsetZ,
+    setHeadHitboxSize,
+    getHeadHitboxSize: () => ({ ...currentHeadHitboxSize }),
+    setAttackArmExtension,
+    getAttackArmExtension: () => currentAttackArmExtension,
+    setDefenseSwordOffset,
+    getDefenseSwordOffset: () => currentDefenseSwordOffset,
+    setStunCircleRadius,
+    getStunCircleRadius: () => currentStunCircleRadius,
     renderPackets,
+    renderFrontalSwordHud,
+    toggleFrontalSwordHud,
     toggleOverlay,
     toggleDurationPanel,
   };

@@ -56,6 +56,7 @@
 
   // 판정별 상태이상 유지시간 (단위: 초) - 인게임에서 숫자 '0' 키를 눌러 실시간 조절 가능
   const JUDGMENT_DURATION = {
+    ATTACK: 0.5,             // 공격 판정 발생 시: 기본공격(ATTACK) 유지시간
     ATTACK_SUCCESS_HIT: 1.0, // 공격 성공 시: 상대 피격(HIT) 유지시간
     ATTACK_FAIL_STUN: 1.0,   // 공격 실패 시: 본인 기절(STUN) 유지시간
     PARRY_STUN: 1.0,         // 패리 시: 양쪽 모두 기절(STUN) 유지시간
@@ -63,12 +64,17 @@
 
   // 상태별 기본 유지시간 (단위: 초)
   const STATE_DURATION = {
-    [PLAYER_STATE.HIT]: 1.0,  // 피격 상태 1초
-    [PLAYER_STATE.STUN]: 1.0, // 기절 상태 1초
+    [PLAYER_STATE.ATTACK]: 0.5, // 기본공격 상태 0.5초
+    [PLAYER_STATE.HIT]: 1.0,    // 피격 상태 1초
+    [PLAYER_STATE.STUN]: 1.0,   // 기절 상태 1초
   };
 
   // 판정별/상태별 유지시간 설정 변경 함수
   function setJudgmentDurations(updates = {}) {
+    if (Number.isFinite(Number(updates.ATTACK)) && Number(updates.ATTACK) >= 0) {
+      JUDGMENT_DURATION.ATTACK = Number(updates.ATTACK);
+      STATE_DURATION[PLAYER_STATE.ATTACK] = JUDGMENT_DURATION.ATTACK;
+    }
     if (Number.isFinite(Number(updates.ATTACK_SUCCESS_HIT)) && Number(updates.ATTACK_SUCCESS_HIT) >= 0) {
       JUDGMENT_DURATION.ATTACK_SUCCESS_HIT = Number(updates.ATTACK_SUCCESS_HIT);
       STATE_DURATION[PLAYER_STATE.HIT] = JUDGMENT_DURATION.ATTACK_SUCCESS_HIT;
@@ -94,16 +100,304 @@
     return { ...JUDGMENT_DURATION };
   }
 
-  // 기본공격 판정 가속도 임계값
-  const ATTACK_ACCEL_THRESHOLD = 5.0;
+  // 각속도(xyz) 기반 기본공격 판정 기준값 (인게임 '0' 키 개발자 패널에서 실시간 조절 가능)
+  const ATTACK_ANGULAR_THRESHOLD = {
+    x: 5.0,
+    y: 5.0,
+    z: 5.0,
+  };
+
+  function setAttackAngularThreshold(updates = {}) {
+    for (const axis of ['x', 'y', 'z']) {
+      const val = Number(updates[axis]);
+      if (Number.isFinite(val) && val >= 0) {
+        ATTACK_ANGULAR_THRESHOLD[axis] = val;
+      }
+    }
+    return { ...ATTACK_ANGULAR_THRESHOLD };
+  }
+
+  function getAttackAngularThreshold() {
+    return { ...ATTACK_ANGULAR_THRESHOLD };
+  }
+
+  // 플레이어 정보에 저장되는 이전 쿼터니언(prevTilt)과 현재 쿼터니언(currentTilt)으로부터 각속도(xyz, rad/s) 계산
+  function computeAngularVelocity(prevTilt, currentTilt, dt = 1 / TICK_RATE) {
+    if (!prevTilt || !currentTilt || dt <= 0) {
+      return { x: 0, y: 0, z: 0 };
+    }
+    const p = normalizeQuaternion(prevTilt);
+    let c = normalizeQuaternion(currentTilt);
+
+    // q와 -q 부호 반전으로 인한 각속도 튐 방지 (내적 < 0 이면 같은 반구로 부호 정렬)
+    const dot = p.x * c.x + p.y * c.y + p.z * c.z + p.w * c.w;
+    if (dot < 0) {
+      c = { x: -c.x, y: -c.y, z: -c.z, w: -c.w };
+    }
+
+    // 상대 회전 쿼터니언 deltaQ = inverse(prevTilt) * currentTilt
+    const invPrev = { x: -p.x, y: -p.y, z: -p.z, w: p.w };
+    const dx = invPrev.w * c.x + invPrev.x * c.w + invPrev.y * c.z - invPrev.z * c.y;
+    const dy = invPrev.w * c.y - invPrev.x * c.z + invPrev.y * c.w + invPrev.z * c.x;
+    const dz = invPrev.w * c.z + invPrev.x * c.y - invPrev.y * c.x + invPrev.z * c.w;
+    const dw = Math.min(1, Math.max(-1, invPrev.w * c.w - invPrev.x * c.x - invPrev.y * c.y - invPrev.z * c.z));
+
+    const sinHalfTheta = Math.hypot(dx, dy, dz);
+    let scale = 2 / dt;
+    if (sinHalfTheta > 1e-6) {
+      const theta = 2 * Math.atan2(sinHalfTheta, dw);
+      scale = theta / (sinHalfTheta * dt);
+    }
+
+    return {
+      x: Number((dx * scale).toFixed(2)) || 0,
+      y: Number((dy * scale).toFixed(2)) || 0,
+      z: Number((dz * scale).toFixed(2)) || 0,
+    };
+  }
+
+  // 기울기 값에 따라 팔이 움직이는 배수 (인게임 '0' 키 개발자 패널에서 실시간 조절 가능)
+  let armSwingMultiplier = 0.55;
+
+  function setArmSwingMultiplier(value) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num >= 0) {
+      armSwingMultiplier = num;
+      for (const player of Object.values(playerData)) {
+        player.armSwingMultiplier = armSwingMultiplier;
+      }
+    }
+    return armSwingMultiplier;
+  }
+
+  // 공격 판정(ATTACK) 시 팔 길이가 늘어나는 정도 (인게임 '0' 키 개발자 패널에서 실시간 조절 가능)
+  let attackArmExtension = 0.65;
+
+  function setAttackArmExtension(value) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num >= 0) {
+      attackArmExtension = num;
+      for (const player of Object.values(playerData)) {
+        player.attackArmExtension = attackArmExtension;
+      }
+      root.InGameFront?.setAttackArmExtension?.(attackArmExtension);
+    }
+    return attackArmExtension;
+  }
+
+  function getAttackArmExtension() {
+    return attackArmExtension;
+  }
+
+  // 방어(DEFENSE) 시 팔 길이는 유지한 채 검이 검 손잡이 방향(+Z)으로 이동하는 거리 (인게임 '0' 키 개발자 패널에서 실시간 조절 가능)
+  let defenseSwordOffset = 1.2;
+
+  function setDefenseSwordOffset(value) {
+    const num = Number(value);
+    if (Number.isFinite(num)) {
+      defenseSwordOffset = num;
+      for (const player of Object.values(playerData)) {
+        player.defenseSwordOffset = defenseSwordOffset;
+      }
+      root.InGameFront?.setDefenseSwordOffset?.(defenseSwordOffset);
+    }
+    return defenseSwordOffset;
+  }
+
+  function getDefenseSwordOffset() {
+    return defenseSwordOffset;
+  }
+
+  // 방어 판정 시 정면으로 내린 두 검 선분이 이루는 최대 허용 각도 (단위: 도, 0~90, 개발자 패널에서 조절 가능)
+  let defenseAngleThreshold = 35;
+
+  function setDefenseAngleThreshold(value) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num >= 0 && num <= 180) {
+      defenseAngleThreshold = num;
+    }
+    return defenseAngleThreshold;
+  }
+
+  function getDefenseAngleThreshold() {
+    return defenseAngleThreshold;
+  }
+
+  // 기절(STUN) 시 중앙에 생성되는 검 진입 금지 원의 반지름 (기절+방어 시에는 미적용, 개발자 패널에서 실시간 조절 가능)
+  let stunCircleRadius = 0.55;
+
+  function setStunCircleRadius(value) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num >= 0) {
+      stunCircleRadius = num;
+      for (const player of Object.values(playerData)) {
+        player.stunCircleRadius = stunCircleRadius;
+      }
+      root.InGameFront?.setStunCircleRadius?.(stunCircleRadius);
+    }
+    return stunCircleRadius;
+  }
+
+  function getStunCircleRadius() {
+    return stunCircleRadius;
+  }
+
+  // 두 플레이어 간의 간격 (인게임 '0' 키 개발자 패널에서 실시간 조절 가능)
+  let playerDistance = 3.0;
+
+  function setPlayerDistance(value) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num > 0) {
+      playerDistance = num;
+      root.InGameFront?.setPlayerDistance?.(playerDistance);
+    }
+    return playerDistance;
+  }
+
+  function getPlayerDistance() {
+    return playerDistance;
+  }
+
+  // 본인 화면에서 보이는 본인 머리의 불투명도 (0.0 ~ 1.0, 인게임 '0' 키 개발자 패널에서 실시간 조절 가능)
+  let selfHeadOpacity = 0.35;
+
+  function setSelfHeadOpacity(value) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num >= 0 && num <= 1) {
+      selfHeadOpacity = num;
+      root.InGameFront?.setSelfHeadOpacity?.(selfHeadOpacity);
+    }
+    return selfHeadOpacity;
+  }
+
+  function getSelfHeadOpacity() {
+    return selfHeadOpacity;
+  }
+
+  // 어깨 기준 머리 앞뒤 위치 오프셋 (인게임 '0' 키 개발자 패널에서 실시간 조절 가능)
+  let headOffsetZ = 0.0;
+
+  function setHeadOffsetZ(value) {
+    const num = Number(value);
+    if (Number.isFinite(num)) {
+      headOffsetZ = num;
+      root.InGameFront?.setHeadOffsetZ?.(headOffsetZ);
+    }
+    return headOffsetZ;
+  }
+
+  function getHeadOffsetZ() {
+    return headOffsetZ;
+  }
+
+  // 머리 직육면체 히트박스 각 모서리 길이 (기본값: 반지름 0.44인 머리 구에 접하도록 0.88 x 0.88 x 0.88)
+  // x: 좌우 가로 너비, y: 상하 세로 높이, z: 앞뒤 깊이
+  const headHitboxSize = {
+    x: 0.88,
+    y: 0.88,
+    z: 0.88,
+  };
+
+  function setHeadHitboxSize(updates = {}) {
+    for (const axis of ['x', 'y', 'z']) {
+      const val = Number(updates[axis]);
+      if (Number.isFinite(val) && val > 0) {
+        headHitboxSize[axis] = val;
+      }
+    }
+    root.InGameFront?.setHeadHitboxSize?.(headHitboxSize);
+    return { ...headHitboxSize };
+  }
+
+  function getHeadHitboxSize() {
+    return { ...headHitboxSize };
+  }
+
+  // 카메라 앞뒤(플레이어 뒤쪽 거리) 및 위아래(높이) 위치 (인게임 '0' 키 개발자 패널에서 실시간 조절 가능)
+  const cameraOffset = {
+    back: 2.4,
+    height: 2.3,
+  };
+
+  function setCameraOffset(updates = {}) {
+    const nextBack = Number(updates.back);
+    if (Number.isFinite(nextBack)) {
+      cameraOffset.back = nextBack;
+    }
+    const nextHeight = Number(updates.height);
+    if (Number.isFinite(nextHeight)) {
+      cameraOffset.height = nextHeight;
+    }
+    root.InGameFront?.setCameraOffset?.(cameraOffset);
+    return { ...cameraOffset };
+  }
+
+  function getCameraOffset() {
+    return { ...cameraOffset };
+  }
+
+  // 플레이어별 영점 조절용 쿼터니언 변수 (버튼 2번 입력 시 갱신되며, 센서값에 곱해 영점을 0, 0, 0, 1로 만듦)
+  const zeroCalibration = {
+    PLAYER_1: { x: 0, y: 0, z: 0, w: 1 },
+    PLAYER_2: { x: 0, y: 0, z: 0, w: 1 },
+  };
+
+  function normalizeQuaternion(q) {
+    const len = Math.hypot(q.x, q.y, q.z, q.w) || 1;
+    return {
+      x: q.x / len,
+      y: q.y / len,
+      z: q.z / len,
+      w: q.w / len,
+    };
+  }
+
+  // 단위 쿼터니언의 역원(켤레 쿼터니언): inverse(q) * q = (0, 0, 0, 1)
+  function invertQuaternion(q) {
+    const n = normalizeQuaternion(q);
+    return {
+      x: -n.x || 0,
+      y: -n.y || 0,
+      z: -n.z || 0,
+      w: n.w || 1,
+    };
+  }
+
+  // 두 쿼터니언 곱셈 (a * b)
+  function multiplyQuaternions(a, b) {
+    const rx = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y;
+    const ry = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x;
+    const rz = a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w;
+    const rw = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z;
+    const n = normalizeQuaternion({ x: rx, y: ry, z: rz, w: rw });
+    return {
+      x: Number(n.x.toFixed(4)) || 0,
+      y: Number(n.y.toFixed(4)) || 0,
+      z: Number(n.z.toFixed(4)) || 0,
+      w: Number(n.w.toFixed(4)) || 0,
+    };
+  }
 
   function createInitialPlayerData() {
     return {
-      tilt: { x: 0, y: 0, z: 0, w: 1 },   // 기울기 (쿼터니언 xyzw)
-      acceleration: { x: 0, y: 0, z: 0 }, // 가속도 (xyz)
-      button: 0,                          // 버튼 입력 (0: 없음, 1: 방어, 2: 강타)
-      state: PLAYER_STATE.IDLE,           // 현재 상태 (기본값: 준비상태)
-      stateDuration: 0,                   // 상태 유지시간 (초 단위, 0 이하면 기본상태로 변경)
+      tilt: { x: 0, y: 0, z: 0, w: 1 },            // 기울기 (쿼터니언 xyzw)
+      prevTilt: { x: 0, y: 0, z: 0, w: 1 },        // 직전 틱 기울기 (각속도 계산용 쿼터니언 xyzw)
+      angularVelocity: { x: 0, y: 0, z: 0 },       // 플레이어 저장 쿼터니언 기반 검 각속도 (xyz, rad/s)
+      acceleration: { x: 0, y: 0, z: 0 },          // 가속도 (xyz)
+      button: 0,                                   // 버튼 입력 (0: 없음, 1: 방어, 2: 강타)
+      state: PLAYER_STATE.IDLE,                    // 현재 상태 (기본값: 준비상태)
+      stateDuration: 0,                            // 상태 유지시간 (초 단위, 0 이하면 기본상태로 변경)
+      armSwingMultiplier,                          // 기울기 값에 따라 팔이 움직이는 배수
+      attackArmExtension,                          // 공격 판정 시 팔이 늘어나는 길이
+      defenseSwordOffset,                          // 방어 시 검이 손잡이 방향으로 이동하는 거리
+      stunCircleRadius,                            // 기절 시 중앙 검 진입금지 원 반지름
+      currentArmExtension: 0,                      // 현재 보간된 팔 연장 길이
+      attackHasHit: false,                         // 현재 공격 스윙에서 이미 피격 판정이 발생했는지 여부
+      attackStartFrontalSegment: null,             // 공격 판정 시작 시점의 정면 검 선분
+      hitImpact: null,                             // 피격 시 검이 맞은 방향 및 진동 정보
+      prevSwordTipWorld: null,                     // 직전 틱 검끝 월드 좌표 (타격 스윙 방향 계산용)
+      swordCollider: null,                         // 공격/방어 판정 시에만 활성화되는 검 선분 콜라이더
+      headCollider: null,                          // 머리 구형 콜라이더
     };
   }
 
@@ -187,12 +481,36 @@
         if (!playerData[playerId]) {
           playerData[playerId] = createInitialPlayerData();
         }
-        playerData[playerId].tilt = { ...payload.rotation_vector };
-        if (payload.acceleration) {
-          playerData[playerId].acceleration = { ...payload.acceleration };
+        if (!zeroCalibration[playerId]) {
+          zeroCalibration[playerId] = { x: 0, y: 0, z: 0, w: 1 };
         }
         if (payload.button !== undefined) {
           playerData[playerId].button = payload.button;
+        }
+        // 버튼 2번이 눌리면 현재 센서 쿼터니언의 역원을 영점조절용 변수(zeroCalibration)에 저장
+        if (payload.button === 2) {
+          zeroCalibration[playerId] = invertQuaternion(payload.rotation_vector);
+        }
+        // 직전 플레이어 정보에 저장된 쿼터니언(tilt) 백업
+        const prevTilt = playerData[playerId].tilt
+          ? { ...playerData[playerId].tilt }
+          : { x: 0, y: 0, z: 0, w: 1 };
+        // 영점조절용 변수를 센서값에 곱해서 실제 게임에 사용되는 tilt 값이 영점 기준 (0, 0, 0, 1)이 되게 함
+        playerData[playerId].tilt = multiplyQuaternions(
+          zeroCalibration[playerId],
+          normalizeQuaternion(payload.rotation_vector)
+        );
+        // 플레이어 정보에 저장되는 쿼터니언(tilt)의 변화량으로부터 각속도(xyz) 계산 (영점 조절 직후에는 0으로 초기화)
+        playerData[playerId].angularVelocity = payload.button === 2
+          ? { x: 0, y: 0, z: 0 }
+          : computeAngularVelocity(prevTilt, playerData[playerId].tilt);
+        playerData[playerId].prevTilt = { ...playerData[playerId].tilt };
+        playerData[playerId].armSwingMultiplier = armSwingMultiplier;
+        playerData[playerId].attackArmExtension = attackArmExtension;
+        playerData[playerId].defenseSwordOffset = defenseSwordOffset;
+        playerData[playerId].stunCircleRadius = stunCircleRadius;
+        if (payload.acceleration) {
+          playerData[playerId].acceleration = { ...payload.acceleration };
         }
         sensorData.set(playerId, payload);
       }
@@ -217,15 +535,18 @@
     return true;
   }
 
-  // 센서 입력(가속도, 버튼)으로부터 플레이어의 현재 동작(준비상태/기본공격/방어) 판정
+  // 플레이어 정보에 저장된 쿼터니언 기반 각속도(angularVelocity)와 버튼으로부터 현재 동작(준비상태/기본공격/방어) 판정
   function detectInputAction(player) {
     // 방어키(button === 1)를 누르고 있으면 방어 상태 우선 유지
     if (player.button === 1) {
       return PLAYER_STATE.DEFENSE;
     }
-    const acc = player.acceleration || { x: 0, y: 0, z: 0 };
-    const accelMag = Math.hypot(acc.x || 0, acc.y || 0, acc.z || 0);
-    if (accelMag >= ATTACK_ACCEL_THRESHOLD || Math.abs(acc.x || 0) >= ATTACK_ACCEL_THRESHOLD) {
+    const av = player.angularVelocity || { x: 0, y: 0, z: 0 };
+    if (
+      Math.abs(av.x || 0) >= ATTACK_ANGULAR_THRESHOLD.x ||
+      Math.abs(av.y || 0) >= ATTACK_ANGULAR_THRESHOLD.y ||
+      Math.abs(av.z || 0) >= ATTACK_ANGULAR_THRESHOLD.z
+    ) {
       return PLAYER_STATE.ATTACK;
     }
     return PLAYER_STATE.IDLE;
@@ -249,57 +570,700 @@
     return state === PLAYER_STATE.STUN || state === PLAYER_STATE.STUN_DEFENSE;
   }
 
+  // 공격(ATTACK) 또는 방어(DEFENSE, STUN_DEFENSE) 판정일 때만 검에 물리 판정이 존재함
+  function hasSwordPhysics(state) {
+    return (
+      state === PLAYER_STATE.ATTACK ||
+      state === PLAYER_STATE.DEFENSE ||
+      state === PLAYER_STATE.STUN_DEFENSE
+    );
+  }
+
+  const ARM_PIVOT_OFFSET = { x: 0, y: -0.22, z: 0.45 };
+  const WRIST_BASE_OFFSET = { x: 0, y: 0.12, z: -0.95 };
+  const HEAD_RADIUS = 0.44;
+  const SWORD_BLADE_LENGTH = 2.2;
+  const SWORD_HANDLE_BACK = 0.25;
+  const SWORD_HEAD_HIT_RADIUS = 0.14;
+  const SWORD_CLASH_RADIUS = 0.34;
+  const ARM_RETRACT_SMOOTHING = 0.16;
+
+  function rotateVec3ByQuat(v, q) {
+    const tx = 2 * (q.y * v.z - q.z * v.y);
+    const ty = 2 * (q.z * v.x - q.x * v.z);
+    const tz = 2 * (q.x * v.y - q.y * v.x);
+    return {
+      x: v.x + q.w * tx + (q.y * tz - q.z * ty),
+      y: v.y + q.w * ty + (q.z * tx - q.x * tz),
+      z: v.z + q.w * tz + (q.x * ty - q.y * tx),
+    };
+  }
+
+  function mapGripQuaternion(q) {
+    const mx = -q.z;
+    const my = -q.x;
+    const mz = -q.y;
+    const mw = q.w;
+
+    const halfRad = (-90 * Math.PI) / 180 / 2;
+    const s = Math.sin(halfRad);
+    const c = Math.cos(halfRad);
+
+    const rx = mx * c + my * s;
+    const ry = my * c - mx * s;
+    const rz = mz * c + mw * s;
+    const rw = mw * c - mz * s;
+
+    return normalizeQuaternion({ x: rx, y: -ry, z: rz, w: rw });
+  }
+
+  function quatFromUnitVectors(fromVec, toVec) {
+    let r = fromVec.x * toVec.x + fromVec.y * toVec.y + fromVec.z * toVec.z + 1;
+    if (r < 1e-6) {
+      r = 0;
+      if (Math.abs(fromVec.x) > Math.abs(fromVec.z)) {
+        return normalizeQuaternion({ x: -fromVec.y, y: fromVec.x, z: 0, w: r });
+      }
+      return normalizeQuaternion({ x: 0, y: -fromVec.z, z: fromVec.y, w: r });
+    }
+    return normalizeQuaternion({
+      x: fromVec.y * toVec.z - fromVec.z * toVec.y,
+      y: fromVec.z * toVec.x - fromVec.x * toVec.z,
+      z: fromVec.x * toVec.y - fromVec.y * toVec.x,
+      w: r,
+    });
+  }
+
+  // 기절(STUN) 상태일 때(기절+방어 STUN_DEFENSE 제외) 검이 중앙 원 안으로 들어오지 못하고
+  // 항상 검끝이 원의 중심에서 바깥쪽(방사형 외곽 방향)을 향한 채 원 둘레를 따라 움직이도록 보정
+  function applyStunCircleConstraint(qn, baseDir, rawBladeDir, circleRadius, baseArmRadius = 0.95) {
+    const r = Math.max(0, Number(circleRadius) || 0);
+    const minDirRadius = Math.min(0.96, Math.max(0.55, r / (baseArmRadius || 0.95)));
+    const ox = rawBladeDir.x - baseDir.x;
+    const oy = rawBladeDir.y - baseDir.y;
+    const dist = Math.hypot(ox, oy);
+
+    // 정중앙 근처일 때는 위쪽(+Y)으로 검이 들리도록 기본 각도(+PI/2) 부여,
+    // 움직임이 있으면 해당 방향 각도(angle)를 따라 검끝이 항상 원 중심에서 바깥쪽을 가리키도록 설정
+    const angle = dist > 1e-4 ? Math.atan2(oy, ox) : Math.PI / 2;
+    const outwardRadius = Math.min(0.96, Math.max(dist, minDirRadius));
+    const clampedBx = Math.cos(angle) * outwardRadius;
+    const clampedBy = Math.sin(angle) * outwardRadius;
+    const xySq = Math.min(0.96, clampedBx * clampedBx + clampedBy * clampedBy);
+    const clampedBz = -Math.sqrt(Math.max(0.04, 1 - xySq));
+    const len = Math.hypot(clampedBx, clampedBy, clampedBz) || 1;
+    const clampedBladeDir = {
+      x: clampedBx / len,
+      y: clampedBy / len,
+      z: clampedBz / len,
+    };
+    const deltaQ = quatFromUnitVectors(rawBladeDir, clampedBladeDir);
+    const clampedQ = multiplyQuaternions(deltaQ, qn);
+    return { qn: clampedQ, bladeDir: clampedBladeDir, angle };
+  }
+
+  // armPivot 로컬 좌표를 월드 좌표로 변환
+  function armPivotLocalToWorld(playerId, localPt) {
+    const halfDist = playerDistance / 2;
+    const bx = localPt.x + ARM_PIVOT_OFFSET.x;
+    const by = localPt.y + ARM_PIVOT_OFFSET.y;
+    const bz = localPt.z + ARM_PIVOT_OFFSET.z;
+
+    if (playerId === 'PLAYER_1') {
+      // baseGroup position (-halfDist, 1.1, 0), rotation.y = -PI / 2
+      return {
+        x: -halfDist - bz,
+        y: 1.1 + by,
+        z: bx,
+      };
+    }
+    // PLAYER_2: baseGroup position (+halfDist, 1.1, 0), rotation.y = +PI / 2
+    return {
+      x: halfDist + bz,
+      y: 1.1 + by,
+      z: -bx,
+    };
+  }
+
+  // 월드 방향 벡터를 플레이어의 armPivot 로컬 방향 벡터로 변환
+  function worldDirToArmPivotLocal(playerId, worldDir) {
+    if (playerId === 'PLAYER_1') {
+      return {
+        x: worldDir.z,
+        y: worldDir.y,
+        z: -worldDir.x,
+      };
+    }
+    return {
+      x: -worldDir.z,
+      y: worldDir.y,
+      z: worldDir.x,
+    };
+  }
+
+  // 플레이어의 현재 자세로부터 월드 공간의 머리(구) 콜라이더와 검(선분) 콜라이더 갱신
+  function updatePlayerPhysicsColliders(playerId, player) {
+    if (!player) return;
+    const rawTilt = player.tilt || { x: 0, y: 0, z: 0, w: 1 };
+    let qn = mapGripQuaternion(rawTilt);
+    const q0n = mapGripQuaternion({ x: 0, y: 0, z: 0, w: 1 });
+    const forwardVec = { x: 0, y: 0, z: -1 };
+    const baseDir = rotateVec3ByQuat(forwardVec, q0n);
+    let bladeDir = rotateVec3ByQuat(forwardVec, qn);
+
+    const baseArmRadius = Math.abs(WRIST_BASE_OFFSET.z) || 0.95;
+
+    // 기절(STUN) 상태(단, 기절+방어 STUN_DEFENSE 제외)일 때 중앙 원 진입 금지 및 검끝 바깥쪽 방향 강제 적용
+    const isPureStun = player.state === PLAYER_STATE.STUN;
+    const circleRadius = Number.isFinite(Number(player.stunCircleRadius))
+      ? Number(player.stunCircleRadius)
+      : stunCircleRadius;
+    let stunOutwardAngle = Math.PI / 2;
+    if (isPureStun) {
+      const constrained = applyStunCircleConstraint(qn, baseDir, bladeDir, circleRadius, baseArmRadius);
+      qn = constrained.qn;
+      bladeDir = constrained.bladeDir;
+      if (Number.isFinite(constrained.angle)) {
+        stunOutwardAngle = constrained.angle;
+      }
+    }
+
+    const isAttacking = player.state === PLAYER_STATE.ATTACK;
+    const targetExtension = isAttacking
+      ? Math.max(0, Number.isFinite(Number(player.attackArmExtension)) ? Number(player.attackArmExtension) : attackArmExtension)
+      : 0;
+    const prevExtension = Number(player.currentArmExtension) || 0;
+    let currentExtension;
+    if (targetExtension >= prevExtension) {
+      currentExtension = targetExtension;
+    } else {
+      const step = Math.max((prevExtension - targetExtension) * ARM_RETRACT_SMOOTHING, 0.005);
+      currentExtension = Math.max(targetExtension, prevExtension - step);
+    }
+    player.currentArmExtension = currentExtension;
+
+    const armRadius = Math.max(0.1, baseArmRadius + currentExtension);
+    const mult = Number.isFinite(Number(player.armSwingMultiplier))
+      ? Number(player.armSwingMultiplier)
+      : armSwingMultiplier;
+
+    let dx = (bladeDir.x - baseDir.x) * armRadius * mult;
+    let dy = (bladeDir.y - baseDir.y) * armRadius * mult;
+
+    if (isPureStun) {
+      const minWristR = Math.min(armRadius * 0.9, Math.max(0, circleRadius));
+      const wristDist = Math.max(Math.hypot(dx, dy), minWristR);
+      dx = Math.cos(stunOutwardAngle) * wristDist;
+      dy = Math.sin(stunOutwardAngle) * wristDist;
+    }
+
+    const xySq = Math.min(armRadius * armRadius * 0.92, dx * dx + dy * dy);
+    const wx = WRIST_BASE_OFFSET.x + dx;
+    const wy = WRIST_BASE_OFFSET.y + dy;
+    const wz = -Math.sqrt(Math.max(0.04, armRadius * armRadius - xySq));
+
+    let sx = wx;
+    let sy = wy;
+    let sz = wz;
+    const isDefending = isDefendingState(player.state) || player.button === 1;
+    if (isDefending) {
+      const defOffsetZ = Number.isFinite(Number(player.defenseSwordOffset))
+        ? Number(player.defenseSwordOffset)
+        : defenseSwordOffset;
+      const shift = rotateVec3ByQuat({ x: 0, y: 0, z: defOffsetZ }, qn);
+      sx += shift.x;
+      sy += shift.y;
+      sz += shift.z;
+    }
+
+    // 그래픽(구형 머리 메쉬)과 분리된 직육면체 머리 히트박스:
+    // 기본 크기(0.88 x 0.88 x 0.88)는 반지름 0.44인 머리 구의 6면에 접하며,
+    // 세로(y) 크기를 늘리면 머리 윗면(정수리)은 구의 윗면에 고정된 채 아래쪽(몸통 방향)으로만 늘어남
+    const headSphereCenterLocal = { x: 0, y: HEAD_RADIUS, z: headOffsetZ };
+    const headSphereCenterWorld = armPivotLocalToWorld(playerId, headSphereCenterLocal);
+    const boxSize = {
+      x: Number(headHitboxSize.x) > 0 ? Number(headHitboxSize.x) : HEAD_RADIUS * 2,
+      y: Number(headHitboxSize.y) > 0 ? Number(headHitboxSize.y) : HEAD_RADIUS * 2,
+      z: Number(headHitboxSize.z) > 0 ? Number(headHitboxSize.z) : HEAD_RADIUS * 2,
+    };
+    // 플레이어 로컬 x(가로) -> 월드 Z축, 로컬 y(세로) -> 월드 Y축, 로컬 z(앞뒤) -> 월드 X축
+    const halfWorldX = boxSize.z / 2;
+    const halfWorldZ = boxSize.x / 2;
+    const topWorldY = headSphereCenterWorld.y + HEAD_RADIUS;
+    const bottomWorldY = topWorldY - boxSize.y;
+    const boxCenterWorldY = topWorldY - boxSize.y / 2;
+    const frontalCenterY = HEAD_RADIUS * 2 - boxSize.y / 2;
+
+    player.headCollider = {
+      type: 'CUBOID',
+      center: {
+        x: headSphereCenterWorld.x,
+        y: boxCenterWorldY,
+        z: headSphereCenterWorld.z,
+      },
+      size: boxSize,
+      frontalCenter: { x: 0, y: frontalCenterY },
+      min: {
+        x: headSphereCenterWorld.x - halfWorldX,
+        y: bottomWorldY,
+        z: headSphereCenterWorld.z - halfWorldZ,
+      },
+      max: {
+        x: headSphereCenterWorld.x + halfWorldX,
+        y: topWorldY,
+        z: headSphereCenterWorld.z + halfWorldZ,
+      },
+    };
+
+    // 검 선분 콜라이더 (손잡이~검끝)
+    const swordStartLocal = {
+      x: sx - bladeDir.x * SWORD_HANDLE_BACK,
+      y: sy - bladeDir.y * SWORD_HANDLE_BACK,
+      z: sz - bladeDir.z * SWORD_HANDLE_BACK,
+    };
+    const swordTipLocal = {
+      x: sx + bladeDir.x * SWORD_BLADE_LENGTH,
+      y: sy + bladeDir.y * SWORD_BLADE_LENGTH,
+      z: sz + bladeDir.z * SWORD_BLADE_LENGTH,
+    };
+    const startWorld = armPivotLocalToWorld(playerId, swordStartLocal);
+    const tipWorld = armPivotLocalToWorld(playerId, swordTipLocal);
+
+    const prevTip = player.prevSwordTipWorld || tipWorld;
+    const tipVelocityWorld = {
+      x: tipWorld.x - prevTip.x,
+      y: tipWorld.y - prevTip.y,
+      z: tipWorld.z - prevTip.z,
+    };
+    player.prevSwordTipWorld = tipWorld;
+
+    // 정면(월드 Z-Y 평면, P1 시점 기준 가로: +Z, 세로: +Y)으로 내린 검 손잡이(start)와 검끝(tip)의 2D 선분
+    const centerWorldY = 1.1 + ARM_PIVOT_OFFSET.y;
+    const frontalSegment = {
+      handle: {
+        x: startWorld.z,
+        y: startWorld.y - centerWorldY,
+      },
+      tip: {
+        x: tipWorld.z,
+        y: tipWorld.y - centerWorldY,
+      },
+    };
+    player.frontalSegment = frontalSegment;
+
+    // 공격 또는 방어 판정 시에만 검의 물리 판정(active: true) 활성화
+    player.swordCollider = {
+      active: hasSwordPhysics(player.state),
+      start: startWorld,
+      tip: tipWorld,
+      prevTip,
+      tipVelocityWorld,
+      frontalSegment,
+    };
+  }
+
+  // 점 P와 선분 AB 사이의 최근접 점 및 거리 계산
+  function closestPointOnSegment(A, B, P) {
+    const abx = B.x - A.x;
+    const aby = B.y - A.y;
+    const abz = B.z - A.z;
+    const lenSq = abx * abx + aby * aby + abz * abz;
+    if (lenSq <= 1e-8) {
+      return { point: { ...A }, dist: Math.hypot(P.x - A.x, P.y - A.y, P.z - A.z) };
+    }
+    const apx = P.x - A.x;
+    const apy = P.y - A.y;
+    const apz = P.z - A.z;
+    const t = Math.min(1, Math.max(0, (apx * abx + apy * aby + apz * abz) / lenSq));
+    const closest = {
+      x: A.x + abx * t,
+      y: A.y + aby * t,
+      z: A.z + abz * t,
+    };
+    return {
+      point: closest,
+      dist: Math.hypot(P.x - closest.x, P.y - closest.y, P.z - closest.z),
+    };
+  }
+
+  // 두 3D 선분 A1-B1 과 A2-B2 사이의 최단 거리 계산
+  function segmentToSegmentDistance(A1, B1, A2, B2) {
+    const u = { x: B1.x - A1.x, y: B1.y - A1.y, z: B1.z - A1.z };
+    const v = { x: B2.x - A2.x, y: B2.y - A2.y, z: B2.z - A2.z };
+    const w = { x: A1.x - A2.x, y: A1.y - A2.y, z: A1.z - A2.z };
+    const a = u.x * u.x + u.y * u.y + u.z * u.z;
+    const b = u.x * v.x + u.y * v.y + u.z * v.z;
+    const c = v.x * v.x + v.y * v.y + v.z * v.z;
+    const d = u.x * w.x + u.y * w.y + u.z * w.z;
+    const e = v.x * w.x + v.y * w.y + v.z * w.z;
+    const D = a * c - b * b;
+    let sc, sN, sD = D;
+    let tc, tN, tD = D;
+
+    if (D < 1e-7) {
+      sN = 0.0;
+      sD = 1.0;
+      tN = e;
+      tD = c;
+    } else {
+      sN = b * e - c * d;
+      tN = a * e - b * d;
+      if (sN < 0.0) {
+        sN = 0.0;
+        tN = e;
+        tD = c;
+      } else if (sN > sD) {
+        sN = sD;
+        tN = e + b;
+        tD = c;
+      }
+    }
+
+    if (tN < 0.0) {
+      tN = 0.0;
+      if (-d < 0.0) sN = 0.0;
+      else if (-d > a) sN = sD;
+      else {
+        sN = -d;
+        sD = a;
+      }
+    } else if (tN > tD) {
+      tN = tD;
+      if (-d + b < 0.0) sN = 0;
+      else if (-d + b > a) sN = sD;
+      else {
+        sN = -d + b;
+        sD = a;
+      }
+    }
+
+    sc = Math.abs(sN) < 1e-7 ? 0.0 : sN / sD;
+    tc = Math.abs(tN) < 1e-7 ? 0.0 : tN / tD;
+
+    const dx = w.x + sc * u.x - tc * v.x;
+    const dy = w.y + sc * u.y - tc * v.y;
+    const dz = w.z + sc * u.z - tc * v.z;
+    return Math.hypot(dx, dy, dz);
+  }
+
+  // 두 검 콜라이더가 충돌했는지 확인 (빠른 스윙 시 직전 검끝~현재 검끝 중간 경로까지 보간 검사)
+  function doSwordsCollide(swordA, swordB) {
+    if (!swordA?.active || !swordB?.active) return false;
+    const directDist = segmentToSegmentDistance(swordA.start, swordA.tip, swordB.start, swordB.tip);
+    if (directDist <= SWORD_CLASH_RADIUS) return true;
+
+    if (swordA.prevTip) {
+      const midTipA = {
+        x: (swordA.prevTip.x + swordA.tip.x) / 2,
+        y: (swordA.prevTip.y + swordA.tip.y) / 2,
+        z: (swordA.prevTip.z + swordA.tip.z) / 2,
+      };
+      if (segmentToSegmentDistance(swordA.start, midTipA, swordB.start, swordB.tip) <= SWORD_CLASH_RADIUS) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 두 2D 정면 선분(seg1, seg2)이 이루는 예각(0~90도) 계산 헬퍼
+  function angleBetweenSegmentsDeg(seg1, seg2) {
+    if (!seg1 || !seg2) return null;
+
+    const v1x = seg1.tip.x - seg1.handle.x;
+    const v1y = seg1.tip.y - seg1.handle.y;
+    const v2x = seg2.tip.x - seg2.handle.x;
+    const v2y = seg2.tip.y - seg2.handle.y;
+
+    const len1 = Math.hypot(v1x, v1y);
+    const len2 = Math.hypot(v2x, v2y);
+    if (len1 < 1e-4 || len2 < 1e-4) return 0;
+
+    // 두 선분이 이루는 각도 (0° ~ 90°)
+    const cosTheta = Math.min(1, Math.max(0, Math.abs(v1x * v2x + v1y * v2y) / (len1 * len2)));
+    return Number(((Math.acos(cosTheta) * 180) / Math.PI).toFixed(2));
+  }
+
+  // 정면으로 투영된 두 플레이어의 검 2D 선분(손잡이 -> 검끝)이 이루는 예각(0~90도) 계산
+  function computeFrontalSwordAngleDeg(p1 = playerData.PLAYER_1, p2 = playerData.PLAYER_2) {
+    const seg1 = p1?.frontalSegment || p1?.swordCollider?.frontalSegment;
+    const seg2 = p2?.frontalSegment || p2?.swordCollider?.frontalSegment;
+    return angleBetweenSegmentsDeg(seg1, seg2);
+  }
+
+  // 정면 2D 평면에서 두 검 선분(seg1, seg2)이 서로 교차하거나 접촉(최단 거리 <= threshold)했는지 판정
+  function doFrontalSegmentsTouch(p1, p2, threshold = 0.24) {
+    const seg1 = p1?.frontalSegment || p1?.swordCollider?.frontalSegment;
+    const seg2 = p2?.frontalSegment || p2?.swordCollider?.frontalSegment;
+    if (!seg1 || !seg2) return false;
+    const a1 = { x: seg1.handle.x, y: seg1.handle.y, z: 0 };
+    const b1 = { x: seg1.tip.x, y: seg1.tip.y, z: 0 };
+    const a2 = { x: seg2.handle.x, y: seg2.handle.y, z: 0 };
+    const b2 = { x: seg2.tip.x, y: seg2.tip.y, z: 0 };
+    return segmentToSegmentDistance(a1, b1, a2, b2) <= threshold;
+  }
+
+  // 공격자의 검과 방어자의 검이 수직(90도 +- 허용치)으로 교차하여 방어 성공 조건을 만족하는지 확인
+  // (두 선분이 이루는 예각이 90도일 때 수직 교차이므로 |90 - angle| <= defenseAngleThreshold 이면 90도 +- 설정치 이내)
+  function isDefenseAngleMatched(attacker, defender) {
+    const defSeg = defender?.frontalSegment || defender?.swordCollider?.frontalSegment;
+    const curAttSeg = attacker?.frontalSegment || attacker?.swordCollider?.frontalSegment;
+    const curAngle = angleBetweenSegmentsDeg(curAttSeg, defSeg);
+    if (curAngle !== null && Math.abs(90 - curAngle) <= defenseAngleThreshold) {
+      return true;
+    }
+    if (attacker?.attackStartFrontalSegment) {
+      const startAngle = angleBetweenSegmentsDeg(attacker.attackStartFrontalSegment, defSeg);
+      if (startAngle !== null && Math.abs(90 - startAngle) <= defenseAngleThreshold) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 공격자의 검이 방어자의 검 깊이(월드 X축)에 도달해 검끼리 부딪히는 타이밍인지 판정
+  function isSwordClashTiming(attackerId, attacker, defender) {
+    const swordA = attacker?.swordCollider;
+    const swordD = defender?.swordCollider;
+    if (!swordA?.active || !swordD?.active) return false;
+
+    if (attackerId === 'PLAYER_1') {
+      // PLAYER_1(-X -> +X 공격): 공격 검의 가장 앞쪽 X가 방어자 검의 X 영역(또는 머리 앞)에 도달한 타이밍
+      const attackerFrontX = Math.max(swordA.start.x, swordA.tip.x);
+      const defenderFrontX = Math.min(swordD.start.x, swordD.tip.x);
+      return attackerFrontX >= defenderFrontX - 0.35;
+    }
+    // PLAYER_2(+X -> -X 공격)
+    const attackerFrontX = Math.min(swordA.start.x, swordA.tip.x);
+    const defenderFrontX = Math.max(swordD.start.x, swordD.tip.x);
+    return attackerFrontX <= defenderFrontX + 0.35;
+  }
+
+  // 3D 선분 AB가 축 정렬 직육면체(AABB: min ~ max)와 교차하는지 검사 (Slab Method)
+  function intersectSegmentAABB(A, B, minBounds, maxBounds) {
+    let tMin = 0;
+    let tMax = 1;
+    const dir = {
+      x: B.x - A.x,
+      y: B.y - A.y,
+      z: B.z - A.z,
+    };
+
+    for (const axis of ['x', 'y', 'z']) {
+      const d = dir[axis];
+      const aVal = A[axis];
+      const bMin = minBounds[axis];
+      const bMax = maxBounds[axis];
+
+      if (Math.abs(d) < 1e-8) {
+        if (aVal < bMin || aVal > bMax) return null;
+      } else {
+        let t1 = (bMin - aVal) / d;
+        let t2 = (bMax - aVal) / d;
+        if (t1 > t2) {
+          const tmp = t1;
+          t1 = t2;
+          t2 = tmp;
+        }
+        tMin = Math.max(tMin, t1);
+        tMax = Math.min(tMax, t2);
+        if (tMin > tMax) return null;
+      }
+    }
+
+    const tHit = (tMin + tMax) / 2;
+    return {
+      tMin,
+      tMax,
+      point: {
+        x: A.x + dir.x * tHit,
+        y: A.y + dir.y * tHit,
+        z: A.z + dir.z * tHit,
+      },
+    };
+  }
+
+  // 공격 검이 상대 머리 직육면체 히트박스에 닿았는지 확인하고, 닿았다면 타격 방향 벡터 반환
+  function checkSwordHitsHead(attackerSword, victimId, victimHead) {
+    if (!attackerSword?.active || !victimHead?.center || !victimHead?.min || !victimHead?.max) return null;
+
+    let hitResult = intersectSegmentAABB(
+      attackerSword.start,
+      attackerSword.tip,
+      victimHead.min,
+      victimHead.max
+    );
+
+    // 빠른 스윙 시 직전 프레임 검끝과 현재 검끝의 중간 선분도 함께 검사하여 터널링 방지
+    if (!hitResult && attackerSword.prevTip) {
+      const midTip = {
+        x: (attackerSword.prevTip.x + attackerSword.tip.x) / 2,
+        y: (attackerSword.prevTip.y + attackerSword.tip.y) / 2,
+        z: (attackerSword.prevTip.z + attackerSword.tip.z) / 2,
+      };
+      hitResult = intersectSegmentAABB(
+        attackerSword.start,
+        midTip,
+        victimHead.min,
+        victimHead.max
+      );
+    }
+
+    if (!hitResult) return null;
+
+    // 검이 맞은 방향 = 검끝의 이동(스윙) 방향 벡터 + 접촉점에서 머리 중심으로 밀어내는 벡터
+    const vel = attackerSword.tipVelocityWorld || { x: 0, y: 0, z: 0 };
+    const hitPt = hitResult.point;
+    const push = {
+      x: victimHead.center.x - hitPt.x,
+      y: victimHead.center.y - hitPt.y,
+      z: victimHead.center.z - hitPt.z,
+    };
+    const pushLen = Math.hypot(push.x, push.y, push.z) || 1;
+    const pushNorm = { x: push.x / pushLen, y: push.y / pushLen, z: push.z / pushLen };
+
+    const velLen = Math.hypot(vel.x, vel.y, vel.z);
+    const velNorm = velLen > 1e-4
+      ? { x: vel.x / velLen, y: vel.y / velLen, z: vel.z / velLen }
+      : { x: 0, y: 0, z: 0 };
+
+    let wx = velNorm.x * 2.2 + pushNorm.x;
+    let wy = velNorm.y * 2.2 + pushNorm.y;
+    let wz = velNorm.z * 2.2 + pushNorm.z;
+    const wLen = Math.hypot(wx, wy, wz) || 1;
+    const worldDir = { x: wx / wLen, y: wy / wLen, z: wz / wLen };
+    const localDir = worldDirToArmPivotLocal(victimId, worldDir);
+
+    return {
+      worldDir,
+      localDir,
+      totalDuration: JUDGMENT_DURATION.ATTACK_SUCCESS_HIT || 1.0,
+      timestamp: Date.now(),
+    };
+  }
+
   function resolveCombat(p1, p2) {
     if (!p1 || !p2) return;
+
+    updatePlayerPhysicsColliders('PLAYER_1', p1);
+    updatePlayerPhysicsColliders('PLAYER_2', p2);
+
     const s1 = p1.state;
     const s2 = p2.state;
 
-    // 양쪽 모두 기본공격 -> 패리 (모두에게 기절 상태 부여 및 시간 초기화)
-    if (s1 === PLAYER_STATE.ATTACK && s2 === PLAYER_STATE.ATTACK) {
-      setPlayerState(
-        p1,
-        p1.button === 1 ? PLAYER_STATE.STUN_DEFENSE : PLAYER_STATE.STUN,
-        JUDGMENT_DURATION.PARRY_STUN
+    // 공격 상태가 아닐 때는 공격 적중 플래그 및 공격 선분 기록 초기화
+    // 공격 중에는 정면 투영 선분 길이가 충분할 때 직전 유효 선분을 갱신하여 접촉 순간 중심부 왜곡을 방지
+    if (s1 !== PLAYER_STATE.ATTACK) {
+      p1.attackHasHit = false;
+      p1.attackStartFrontalSegment = null;
+    } else if (p1.frontalSegment) {
+      const len1 = Math.hypot(
+        p1.frontalSegment.tip.x - p1.frontalSegment.handle.x,
+        p1.frontalSegment.tip.y - p1.frontalSegment.handle.y
       );
-      setPlayerState(
-        p2,
-        p2.button === 1 ? PLAYER_STATE.STUN_DEFENSE : PLAYER_STATE.STUN,
-        JUDGMENT_DURATION.PARRY_STUN
-      );
-      return;
+      if (!p1.attackStartFrontalSegment || len1 >= 0.45) {
+        p1.attackStartFrontalSegment = {
+          handle: { ...p1.frontalSegment.handle },
+          tip: { ...p1.frontalSegment.tip },
+        };
+      }
     }
 
-    // PLAYER_1이 기본공격인 경우
-    if (s1 === PLAYER_STATE.ATTACK) {
-      if (isDefendingState(s2)) {
-        // 공격 실패 (상대가 방어 또는 기절+방어) -> 공격자(PLAYER_1)에게 기절 상태 부여 및 시간 초기화
+    if (s2 !== PLAYER_STATE.ATTACK) {
+      p2.attackHasHit = false;
+      p2.attackStartFrontalSegment = null;
+    } else if (p2.frontalSegment) {
+      const len2 = Math.hypot(
+        p2.frontalSegment.tip.x - p2.frontalSegment.handle.x,
+        p2.frontalSegment.tip.y - p2.frontalSegment.handle.y
+      );
+      if (!p2.attackStartFrontalSegment || len2 >= 0.45) {
+        p2.attackStartFrontalSegment = {
+          handle: { ...p2.frontalSegment.handle },
+          tip: { ...p2.frontalSegment.tip },
+        };
+      }
+    }
+
+    const swordsCollide3D = doSwordsCollide(p1.swordCollider, p2.swordCollider);
+    const frontalSwordsTouch = doFrontalSegmentsTouch(p1, p2);
+    const impactOnP2 = s1 === PLAYER_STATE.ATTACK
+      ? checkSwordHitsHead(p1.swordCollider, 'PLAYER_2', p2.headCollider)
+      : null;
+    const impactOnP1 = s2 === PLAYER_STATE.ATTACK
+      ? checkSwordHitsHead(p2.swordCollider, 'PLAYER_1', p1.headCollider)
+      : null;
+
+    // 검이 실제로 상대 검 또는 머리 히트박스에 닿은 타이밍 판정 (닿는 순간 기절이 걸려 검이 튕겨져 나오는 느낌 연출)
+    const p1SwordTouchedP2 = Boolean(
+      swordsCollide3D ||
+      (isSwordClashTiming('PLAYER_1', p1, p2) && frontalSwordsTouch) ||
+      impactOnP2
+    );
+    const p2SwordTouchedP1 = Boolean(
+      swordsCollide3D ||
+      (isSwordClashTiming('PLAYER_2', p2, p1) && frontalSwordsTouch) ||
+      impactOnP1
+    );
+
+    // 1) 맞공격(패리): 두 검이 닿은 타이밍에 교차 각도(90도 +- 설정치)를 만족하면 양쪽 모두 기절 부여
+    if (s1 === PLAYER_STATE.ATTACK && s2 === PLAYER_STATE.ATTACK) {
+      if (p1SwordTouchedP2 || p2SwordTouchedP1) {
+        const parryMatched = isDefenseAngleMatched(p1, p2) || isDefenseAngleMatched(p2, p1);
+        if (parryMatched) {
+          setPlayerState(
+            p1,
+            p1.button === 1 ? PLAYER_STATE.STUN_DEFENSE : PLAYER_STATE.STUN,
+            JUDGMENT_DURATION.PARRY_STUN
+          );
+          setPlayerState(
+            p2,
+            p2.button === 1 ? PLAYER_STATE.STUN_DEFENSE : PLAYER_STATE.STUN,
+            JUDGMENT_DURATION.PARRY_STUN
+          );
+          return;
+        }
+      }
+    }
+
+    // 2) PLAYER_1 공격 vs PLAYER_2 방어:
+    //    검이 닿은 타이밍(p1SwordTouchedP2)에 피격 판정보다 먼저 두 검의 각도(90도 +- 허용치)를 확인하여
+    //    방어 성공 시 공격자(PLAYER_1)에게 기절을 부여해 검이 튕겨져 나가게 함
+    if (s1 === PLAYER_STATE.ATTACK && isDefendingState(s2) && p1SwordTouchedP2) {
+      if (isDefenseAngleMatched(p1, p2)) {
         setPlayerState(
           p1,
           p1.button === 1 ? PLAYER_STATE.STUN_DEFENSE : PLAYER_STATE.STUN,
           JUDGMENT_DURATION.ATTACK_FAIL_STUN
         );
-      } else {
-        // 공격 성공 -> 상대(PLAYER_2)에게 최상위 위계인 피격(HIT) 부여 (기존 상태 덮어씀)
-        setPlayerState(p2, PLAYER_STATE.HIT, JUDGMENT_DURATION.ATTACK_SUCCESS_HIT);
-        //setPlayerState(p1, PLAYER_STATE.IDLE, 0, { force: true });
+        return;
       }
-      return;
     }
 
-    // PLAYER_2가 기본공격인 경우
-    if (s2 === PLAYER_STATE.ATTACK) {
-      if (isDefendingState(s1)) {
-        // 공격 실패 (상대가 방어 또는 기절+방어) -> 공격자(PLAYER_2)에게 기절 상태 부여 및 시간 초기화
+    // 3) PLAYER_2 공격 vs PLAYER_1 방어:
+    //    검이 닿은 타이밍(p2SwordTouchedP1)에 피격 판정보다 먼저 두 검의 각도(90도 +- 허용치)를 확인하여
+    //    방어 성공 시 공격자(PLAYER_2)에게 기절을 부여해 검이 튕겨져 나가게 함
+    if (s2 === PLAYER_STATE.ATTACK && isDefendingState(s1) && p2SwordTouchedP1) {
+      if (isDefenseAngleMatched(p2, p1)) {
         setPlayerState(
           p2,
           p2.button === 1 ? PLAYER_STATE.STUN_DEFENSE : PLAYER_STATE.STUN,
           JUDGMENT_DURATION.ATTACK_FAIL_STUN
         );
-      } else {
-        // 공격 성공 -> 상대(PLAYER_1)에게 최상위 위계인 피격(HIT) 부여 (기존 상태 덮어씀)
-        setPlayerState(p1, PLAYER_STATE.HIT, JUDGMENT_DURATION.ATTACK_SUCCESS_HIT);
-        //setPlayerState(p2, PLAYER_STATE.IDLE, 0, { force: true });
+        return;
       }
+    }
+
+    // 4) 방어에 막히지 않은 공격 판정의 검이 상대 머리에 닿으면 피격(HIT) 및 맞은 방향 흔들림 정보 부여
+    if (s1 === PLAYER_STATE.ATTACK && !p1.attackHasHit && impactOnP2) {
+      p1.attackHasHit = true;
+      p2.hitImpact = impactOnP2;
+      setPlayerState(p2, PLAYER_STATE.HIT, JUDGMENT_DURATION.ATTACK_SUCCESS_HIT);
+    }
+
+    if (s2 === PLAYER_STATE.ATTACK && !p2.attackHasHit && impactOnP1) {
+      p2.attackHasHit = true;
+      p1.hitImpact = impactOnP1;
+      setPlayerState(p1, PLAYER_STATE.HIT, JUDGMENT_DURATION.ATTACK_SUCCESS_HIT);
     }
   }
 
@@ -326,14 +1290,17 @@
       }
 
       // 3) 센서 입력 동작(기본=0, 공격=10, 방어=10) 반영:
-      //    - 유지시간이 0 이하일 때는 자유롭게 전환
+      //    - 유지시간이 0 이하일 때는 자유롭게 전환 (공격 판정 발생 시 ATTACK 유지시간 부여)
       //    - 유지시간이 남아있을 때는 위계 비교(canOverrideState)를 통과하는 경우에만 덮어씀
       if (sensorData && sensorData.has(playerId)) {
         const inputAction = detectInputAction(player);
+        const actionDuration = inputAction === PLAYER_STATE.ATTACK
+          ? JUDGMENT_DURATION.ATTACK
+          : (STATE_DURATION[inputAction] || 0);
         if (player.stateDuration <= 0) {
-          setPlayerState(player, inputAction, 0, { force: true });
+          setPlayerState(player, inputAction, actionDuration, { force: true });
         } else {
-          setPlayerState(player, inputAction, player.stateDuration, { inheritDuration: true });
+          setPlayerState(player, inputAction, actionDuration);
         }
       }
     }
@@ -411,6 +1378,8 @@
     STATE_PRIORITY,
     JUDGMENT_DURATION,
     STATE_DURATION,
+    ATTACK_ANGULAR_THRESHOLD,
+    zeroCalibration,
     playerData,
     start,
     stop,
@@ -421,6 +1390,33 @@
     updateState,
     setPlayerState,
     setJudgmentDurations,
+    setAttackAngularThreshold,
+    getAttackAngularThreshold,
+    computeAngularVelocity,
+    setArmSwingMultiplier,
+    getArmSwingMultiplier: () => armSwingMultiplier,
+    setAttackArmExtension,
+    getAttackArmExtension,
+    setDefenseSwordOffset,
+    getDefenseSwordOffset,
+    setDefenseAngleThreshold,
+    getDefenseAngleThreshold,
+    computeFrontalSwordAngleDeg,
+    setStunCircleRadius,
+    getStunCircleRadius,
+    hasSwordPhysics,
+    applyStunCircleConstraint,
+    updatePlayerPhysicsColliders,
+    setPlayerDistance,
+    getPlayerDistance,
+    setSelfHeadOpacity,
+    getSelfHeadOpacity,
+    setHeadOffsetZ,
+    getHeadOffsetZ,
+    setHeadHitboxSize,
+    getHeadHitboxSize,
+    setCameraOffset,
+    getCameraOffset,
     getStatePriority,
     canOverrideState,
     registerPlayerState,
