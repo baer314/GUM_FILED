@@ -274,6 +274,22 @@
     return selfHeadOpacity;
   }
 
+  // 물리 팔 모델의 불투명도 (0.0 ~ 1.0, 인게임 '0' 키 개발자 패널에서 실시간 조절 가능)
+  let armOpacity = 1.0;
+
+  function setArmOpacity(value) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num >= 0 && num <= 1) {
+      armOpacity = num;
+      root.InGameFront?.setArmOpacity?.(armOpacity);
+    }
+    return armOpacity;
+  }
+
+  function getArmOpacity() {
+    return armOpacity;
+  }
+
   // 어깨 기준 머리 앞뒤 위치 오프셋 (인게임 '0' 키 개발자 패널에서 실시간 조절 가능)
   let headOffsetZ = 0.0;
 
@@ -635,27 +651,19 @@
   }
 
   // 기절(STUN) 상태일 때(기절+방어 STUN_DEFENSE 제외) 검이 중앙 원 안으로 들어오지 못하고
-  // 항상 검끝이 원의 중심에서 바깥쪽(방사형 외곽 방향)을 향한 채 원 둘레를 따라 움직이도록 보정
-  function applyStunCircleConstraint(qn, baseDir, rawBladeDir, circleRadius, baseArmRadius = 0.95) {
-    const r = Math.max(0, Number(circleRadius) || 0);
-    const minDirRadius = Math.min(0.96, Math.max(0.55, r / (baseArmRadius || 0.95)));
+  // 검끝이 정면 기준 완전 바깥쪽(중심에서 90도 방사형 외곽, z = 0)을 향한 채 원 둘레를 따라 움직이도록 보정
+  function applyStunCircleConstraint(qn, baseDir, rawBladeDir) {
     const ox = rawBladeDir.x - baseDir.x;
     const oy = rawBladeDir.y - baseDir.y;
     const dist = Math.hypot(ox, oy);
 
-    // 정중앙 근처일 때는 위쪽(+Y)으로 검이 들리도록 기본 각도(+PI/2) 부여,
-    // 움직임이 있으면 해당 방향 각도(angle)를 따라 검끝이 항상 원 중심에서 바깥쪽을 가리키도록 설정
+    // 정중앙 근처일 때는 위쪽(+Y)으로 검이 완전히 들리도록 기본 각도(+PI/2) 부여,
+    // 움직임이 있으면 해당 방향 각도(angle)를 따라 검끝이 완전 바깥쪽(z = 0)을 가리키도록 설정
     const angle = dist > 1e-4 ? Math.atan2(oy, ox) : Math.PI / 2;
-    const outwardRadius = Math.min(0.96, Math.max(dist, minDirRadius));
-    const clampedBx = Math.cos(angle) * outwardRadius;
-    const clampedBy = Math.sin(angle) * outwardRadius;
-    const xySq = Math.min(0.96, clampedBx * clampedBx + clampedBy * clampedBy);
-    const clampedBz = -Math.sqrt(Math.max(0.04, 1 - xySq));
-    const len = Math.hypot(clampedBx, clampedBy, clampedBz) || 1;
     const clampedBladeDir = {
-      x: clampedBx / len,
-      y: clampedBy / len,
-      z: clampedBz / len,
+      x: Math.cos(angle),
+      y: Math.sin(angle),
+      z: 0,
     };
     const deltaQ = quatFromUnitVectors(rawBladeDir, clampedBladeDir);
     const clampedQ = multiplyQuaternions(deltaQ, qn);
@@ -1411,6 +1419,8 @@
     getPlayerDistance,
     setSelfHeadOpacity,
     getSelfHeadOpacity,
+    setArmOpacity,
+    getArmOpacity,
     setHeadOffsetZ,
     getHeadOffsetZ,
     setHeadHitboxSize,

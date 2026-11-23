@@ -28,6 +28,10 @@
 
     let leftForearm = null;
     let rightForearm = null;
+    let leftJoint = null;
+    let rightJoint = null;
+    let jointMat = null;
+    let limbMat = null;
     const defaultLimbLen = Math.hypot(
       SHOULDER_HALF_WIDTH,
       WRIST_BASE_OFFSET.y,
@@ -35,14 +39,24 @@
     );
 
     if (THREE.SphereGeometry && THREE.CylinderGeometry) {
-      const jointMat = new THREE.MeshStandardMaterial({ color: 0x8ecab1, roughness: 0.5 });
-      const leftJoint = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 12), jointMat);
+      jointMat = new THREE.MeshStandardMaterial({
+        color: 0x8ecab1,
+        roughness: 0.5,
+        transparent: true,
+        opacity: 1.0,
+      });
+      leftJoint = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 12), jointMat);
       leftJoint.position.set(-SHOULDER_HALF_WIDTH, 0, 0);
-      const rightJoint = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 12), jointMat);
+      rightJoint = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 12), jointMat);
       rightJoint.position.set(SHOULDER_HALF_WIDTH, 0, 0);
       armPivot.add(leftJoint, rightJoint);
 
-      const limbMat = new THREE.MeshStandardMaterial({ color: 0x35584c, roughness: 0.6 });
+      limbMat = new THREE.MeshStandardMaterial({
+        color: 0x35584c,
+        roughness: 0.6,
+        transparent: true,
+        opacity: 1.0,
+      });
       leftForearm = new THREE.Mesh(
         new THREE.CylinderGeometry(0.042, 0.058, defaultLimbLen, 10),
         limbMat
@@ -69,12 +83,29 @@
       armPivot.add(leftForearm, rightForearm);
     }
 
+    function setOpacity(opacity) {
+      const clamped = Math.min(1, Math.max(0, Number.isFinite(Number(opacity)) ? Number(opacity) : 1));
+      const isVisible = clamped > 0;
+      for (const m of [leftJoint, rightJoint, leftForearm, rightForearm]) {
+        if (m) m.visible = isVisible;
+      }
+      for (const mat of [jointMat, limbMat]) {
+        if (mat) {
+          mat.opacity = clamped;
+          mat.transparent = clamped < 1;
+          mat.depthWrite = clamped >= 1;
+          mat.needsUpdate = true;
+        }
+      }
+    }
+
     return {
       armPivot,
       leftForearm,
       rightForearm,
       defaultLimbLen,
       baseWristOffset: { ...WRIST_BASE_OFFSET },
+      setOpacity,
       positionLimbBetween: (limb, sx, sy, sz, tx, ty, tz, baseLen) =>
         positionLimbBetween(THREE, limb, sx, sy, sz, tx, ty, tz, baseLen),
       updateLimbs(wx, wy, wz) {

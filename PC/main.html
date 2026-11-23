@@ -64,100 +64,9 @@
       <div class="split-divider"></div>
       <div class="split-pane-label split-right-label">PLAYER 2 VIEW</div>
     </div>
-    <div id="frontal-sword-hud" class="frontal-sword-hud" hidden aria-label="정면 검 선분 표시">
-      <div class="frontal-hud-box frontal-hud-left">
-        <p class="frontal-hud-title">P1 정면 검 선분 (KEY 9)</p>
-        <div id="frontal-svg-p1" class="frontal-svg-wrap"></div>
-        <p id="frontal-state-p1" class="frontal-hud-meta">상태: IDLE (0.00s)</p>
-        <p id="frontal-angle-p1" class="frontal-hud-meta">두 검 각도: —</p>
-      </div>
-      <div class="frontal-hud-box frontal-hud-right">
-        <p class="frontal-hud-title">P2 정면 검 선분 (KEY 9)</p>
-        <div id="frontal-svg-p2" class="frontal-svg-wrap"></div>
-        <p id="frontal-state-p2" class="frontal-hud-meta">상태: IDLE (0.00s)</p>
-        <p id="frontal-angle-p2" class="frontal-hud-meta">두 검 각도: —</p>
-      </div>
-    </div>
     <div class="ingame-top-bar">
-      <span class="tab-hint"><kbd>9</kbd> 정면 검 선분 · <kbd>0</kbd> 상태시간 설정 · <kbd>Tab</kbd> 패킷 정보 토글</span>
       <button id="back-to-lobby" type="button" class="overlay-btn">대기방 보기</button>
     </div>
-    <aside id="ingame-duration-panel" class="ingame-duration-panel" hidden aria-label="판정별 상태이상 시간 설정">
-      <div class="ingame-overlay-header">
-        <div>
-          <p class="ingame-eyebrow">REAL-TIME TUNING (KEY 0)</p>
-          <h2>판정별 상태이상 유지시간 (초)</h2>
-        </div>
-        <button id="close-duration-panel" type="button" class="overlay-btn">닫기</button>
-      </div>
-      <div class="duration-form">
-        <label>공격 판정 → 기본공격(ATTACK) 유지시간 (초)
-          <input id="dur-attack" type="number" min="0" max="60" step="0.1" value="0.5">
-        </label>
-        <label>공격 성공 → 상대 피격(HIT) 시간 (초)
-          <input id="dur-attack-hit" type="number" min="0" max="60" step="0.1" value="1.0">
-        </label>
-        <label>공격 실패 → 본인 기절(STUN) 시간 (초)
-          <input id="dur-attack-fail" type="number" min="0" max="60" step="0.1" value="1.0">
-        </label>
-        <label>패리 → 양쪽 기절(STUN) 시간 (초)
-          <input id="dur-parry-stun" type="number" min="0" max="60" step="0.1" value="1.0">
-        </label>
-        <label>기울기 대비 팔 움직임 배수
-          <input id="arm-swing-multiplier" type="number" min="0" max="5" step="0.05" value="0.55">
-        </label>
-        <label>공격 판정 시 팔 늘어나는 정도
-          <input id="attack-arm-extension" type="number" min="0" max="5" step="0.05" value="0.45">
-        </label>
-        <label>방어 시 검 손잡이 방향 이동 거리
-          <input id="defense-sword-offset" type="number" min="-5" max="5" step="0.1" value="1.2">
-        </label>
-        <label>방어 판정 검 교차 각도 허용치 (90° ± 도, 0~90)
-          <input id="defense-angle-threshold" type="number" min="0" max="90" step="1" value="35">
-        </label>
-        <label>기절 시 중앙 진입금지 원 반지름
-          <input id="stun-circle-radius" type="number" min="0" max="2.5" step="0.05" value="0.55">
-        </label>
-        <label>플레이어 간 간격
-          <input id="player-distance" type="number" min="0.5" max="20" step="0.1" value="3.0">
-        </label>
-        <label>본인 화면 머리 불투명도 (0~1)
-          <input id="self-head-opacity" type="number" min="0" max="1" step="0.05" value="0.35">
-        </label>
-        <label>머리 앞뒤 위치 (어깨 기준, -앞/+뒤)
-          <input id="head-offset-z" type="number" min="-5" max="5" step="0.05" value="0.0">
-        </label>
-        <label>머리 히트박스 크기 (가로 X / 세로 Y / 앞뒤 Z)
-          <div class="xyz-threshold-row">
-            <input id="head-box-x" type="number" min="0.1" max="5" step="0.04" value="0.88" aria-label="머리 히트박스 가로 X">
-            <input id="head-box-y" type="number" min="0.1" max="5" step="0.04" value="0.88" aria-label="머리 히트박스 세로 Y">
-            <input id="head-box-z" type="number" min="0.1" max="5" step="0.04" value="0.88" aria-label="머리 히트박스 앞뒤 Z">
-          </div>
-        </label>
-        <label>카메라 앞뒤 거리 (플레이어 뒤쪽 기준)
-          <input id="camera-back-offset" type="number" min="-5" max="15" step="0.1" value="2.4">
-        </label>
-        <label>카메라 위아래 높이
-          <input id="camera-height" type="number" min="0.1" max="15" step="0.1" value="2.3">
-        </label>
-        <label>공격 판정 각속도 기준값 (X / Y / Z)
-          <div class="xyz-threshold-row">
-            <input id="ang-vel-thresh-x" type="number" min="0" max="100" step="0.5" value="5.0" aria-label="각속도 X 기준값">
-            <input id="ang-vel-thresh-y" type="number" min="0" max="100" step="0.5" value="5.0" aria-label="각속도 Y 기준값">
-            <input id="ang-vel-thresh-z" type="number" min="0" max="100" step="0.5" value="5.0" aria-label="각속도 Z 기준값">
-          </div>
-        </label>
-      </div>
-    </aside>
-    <aside id="ingame-overlay" class="ingame-overlay" aria-live="polite">
-      <div class="ingame-overlay-header">
-        <div>
-          <p class="ingame-eyebrow">GUM FIELD · IN-GAME MONITOR (TAB TOGGLE)</p>
-          <h2>실시간 컨트롤러 패킷 정보</h2>
-        </div>
-      </div>
-      <div id="ingame-packets" class="ingame-packets"></div>
-    </aside>
   </section>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -168,6 +77,7 @@
   <script src="/Graphic/Arm.js"></script>
   <script src="/Graphic/Head.js"></script>
   <script src="/Graphic/Sword.js"></script>
+  <script src="/inGameDev.js"></script>
   <script src="/inGameFront.js"></script>
   <script src="/inGameBack.js"></script>
   <script src="/back.js"></script>

@@ -9,9 +9,10 @@
     // - 핸드폰 오른쪽 면(+Y) = 위쪽(하늘 방향)을 향하고,
     // - 핸드폰 화면/카메라 면(±X) = 검의 넓은 좌/우 옆면(±X)이 되도록 세로형 검 단면으로 구성
     const blade = new THREE.Mesh(
-      new THREE.BoxGeometry(0.06, 0.22, 2.2),
+      new THREE.CylinderGeometry(0.1, 0.1, 2.2, 16),
       new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.3 })
     );
+    blade.rotation.x = Math.PI / 2;
     blade.position.z = -1.1;
 
     const guard = new THREE.Mesh(
@@ -24,6 +25,20 @@
       new THREE.MeshStandardMaterial({ color: 0x5c3d2e, roughness: 0.7 })
     );
     handle.position.z = 0.25;
+
+    // 손잡이를 양손으로 쥔 구형 손 표현 (앞손: 코등이 쪽, 뒷손: 손잡이 끝쪽)
+    if (THREE.SphereGeometry && THREE.MeshStandardMaterial) {
+      const handMat = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.5,
+        metalness: 0.1,
+      });
+      const frontHand = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 16), handMat);
+      frontHand.position.set(0.1, 0, 0.16);
+      const backHand = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 16), handMat);
+      backHand.position.set(-0.1, 0, 0.36);
+      swordGroup.add(frontHand, backHand);
+    }
 
     swordGroup.add(blade, guard, handle);
     return swordGroup;

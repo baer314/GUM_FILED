@@ -20,4 +20,7 @@ object Config {
 
     /** 주소에 포트를 안 적었을 때 붙일 기본 포트 */
     const val DEFAULT_PORT = 8080
+
+    /** p2p 모드에서 입장 후 이 시간 안에 DataChannel이 안 열리면 실패로 처리 */
+    const val P2P_CONNECT_TIMEOUT_MS = 15_000L
 }

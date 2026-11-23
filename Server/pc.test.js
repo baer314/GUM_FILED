@@ -35,6 +35,7 @@ async function screen() {
       }
     } });
   vm.runInContext(readFileSync(require.resolve('../PC/front.js'), 'utf8'), context);
+  vm.runInContext(readFileSync(require.resolve('../PC/inGameDev.js'), 'utf8'), context);
   vm.runInContext(readFileSync(require.resolve('../PC/inGameFront.js'), 'utf8'), context);
   vm.runInContext(readFileSync(require.resolve('../PC/inGameBack.js'), 'utf8'), context);
   vm.runInContext(readFileSync(require.resolve('../PC/back.js'), 'utf8'), context);

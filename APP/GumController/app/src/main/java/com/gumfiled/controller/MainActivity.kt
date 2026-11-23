@@ -5,17 +5,22 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import android.view.KeyEvent
 import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.gumfiled.controller.databinding.ActivityMainBinding
 import com.gumfiled.controller.net.JoinInfo
 import com.gumfiled.controller.net.Packet
+import com.gumfiled.controller.net.RtcClient
 import com.gumfiled.controller.net.WsClient
 import com.gumfiled.controller.sensor.SensorSampler
 import com.gumfiled.controller.sensor.SensorStreamer
@@ -25,21 +30,31 @@ import org.json.JSONObject
 import java.util.Locale
 
 /**
- * 화면 흐름 (README 시퀀스 다이어그램 기준)
- *   CONNECT ──JOIN_SUCCESS──▶ WAITING ──GAME_START──▶ CALIBRATION ──확인──▶ PLAYING
- * 영점 화면부터 SENSOR 패킷을 계속 보낸다 (규격 19~20번).
+ * 화면 흐름
+ *   CONNECT ──JOIN_SUCCESS──▶ WAITING ──GAME_START──▶ PLAYING
+ * 영점은 PC에서 처리하므로 앱에는 영점 화면이 없다.
+ * GAME_START 이후 SENSOR 패킷을 계속 보낸다.
+ *
+ * 전송 방식은 서버가 JOIN_SUCCESS.transport로 알려준다.
+ *  - relay: 입장, GAME_START, SENSOR 모두 WebSocket(서버 경유)
+ *  - p2p:   입장과 WebRTC 시그널링은 WebSocket, GAME_START와 SENSOR는 WebRTC DataChannel(PC와 직접)
  */
-class MainActivity : AppCompatActivity(), WsClient.Listener {
+class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener {
 
-    private enum class Screen { CONNECT, WAITING, CALIBRATION, PLAYING }
+    private enum class Screen { CONNECT, WAITING, PLAYING }
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var sampler: SensorSampler
     private lateinit var streamer: SensorStreamer
 
     private var screen = Screen.CONNECT
-    private var ws: WsClient? = null
+    // WebRTC 스레드에서도 읽으므로 @Volatile
+    @Volatile private var ws: WsClient? = null
+    private var rtc: RtcClient? = null
+    private var transportMode = Packet.TRANSPORT_RELAY
+    private var iceServers: List<String> = emptyList()
     private var playerId: String? = null
+    private var lastErrorToastMs = 0L
     private var pendingPin: String? = null
     private var testMode = false
 
@@ -76,11 +91,12 @@ class MainActivity : AppCompatActivity(), WsClient.Listener {
         }
 
         binding.btnScan.setOnClickListener { startQrScan() }
-        binding.btnJoin.setOnClickListener {
-            join(binding.etServer.text.toString(), binding.etPin.text.toString())
+        binding.btnJoin.setOnClickListener { joinFromInput() }
+        // 키패드의 '이동' 키로도 입장
+        binding.etPin.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_GO) { joinFromInput(); true } else false
         }
-        binding.btnSensorTest.setOnClickListener { startSensorTest() }
-        binding.btnConfirm.setOnClickListener { confirmCalibration() }
+        binding.btnSensorTest.setOnClickListener { hideKeyboard(); startSensorTest() }
         binding.btnLeaveWaiting.setOnClickListener { leave("나갔습니다") }
         binding.btnLeavePlaying.setOnClickListener { leave("나갔습니다") }
 
@@ -110,13 +126,28 @@ class MainActivity : AppCompatActivity(), WsClient.Listener {
 
     override fun onDestroy() {
         streamer.stop()
+        rtc?.close()
         ws?.close()
         super.onDestroy()
     }
 
     // ------------------------------------------------------------------ 연결
 
+    private fun joinFromInput() {
+        hideKeyboard()
+        join(binding.etServer.text.toString(), binding.etPin.text.toString())
+    }
+
+    /** 입장 버튼을 눌러도 키패드가 남아 화면을 가리던 문제 → 포커스를 빼고 키패드를 내린다 */
+    private fun hideKeyboard() {
+        val focused = currentFocus ?: binding.root
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+            .hideSoftInputFromWindow(focused.windowToken, 0)
+        focused.clearFocus()
+    }
+
     private fun startQrScan() {
+        hideKeyboard()
         val options = ScanOptions().apply {
             setDesiredBarcodeFormats(ScanOptions.QR_CODE)
             setPrompt("PC 화면의 QR 코드를 비춰주세요")
@@ -145,6 +176,8 @@ class MainActivity : AppCompatActivity(), WsClient.Listener {
         if (pin.isEmpty()) { setStatus("PIN을 입력하세요"); return }
 
         prefs().edit().putString(PREF_SERVER, serverInput.trim()).apply()
+        rtc?.close()
+        rtc = null
         ws?.close()
         pendingPin = pin
         setStatus("연결 중... $url")
@@ -158,32 +191,67 @@ class MainActivity : AppCompatActivity(), WsClient.Listener {
         setStatus("입장 요청 보냄 (PIN $pin)")
     }
 
+    /** 서버(WebSocket)에서 온 메시지 */
     override fun onMessage(json: JSONObject) {
         val type = json.optString("type")
-        Log.d(TAG, "수신: $json")
+        if (type != Packet.WEBRTC_ICE_CANDIDATE) Log.d(TAG, "WS 수신: $json")
         when (type) {
-            Packet.JOIN_SUCCESS -> {
-                playerId = json.optString("assigned_id").ifEmpty { "PLAYER_?" }
-                binding.tvWaitingNote.text = ""
-                show(Screen.WAITING)
-                vibrate(60)
-            }
-            Packet.GAME_START -> startCalibration()
+            Packet.JOIN_SUCCESS -> onJoined(json)
+            Packet.GAME_START -> startGame() // relay 모드에서만 이 경로로 온다
+            Packet.WEBRTC_OFFER -> onOffer(json)
+            Packet.WEBRTC_ICE_CANDIDATE -> rtc?.handleRemoteCandidate(json.optJSONObject("candidate"))
+            Packet.ERROR -> onServerError(json)
+            Packet.ROOM_CLOSED -> leave("PC가 방을 닫았습니다")
+            else -> Log.w(TAG, "처리하지 않은 메시지: $json")
+        }
+    }
 
-            // 11/26 WebRTC 단계에서 처리. 지금은 서버가 보내도 무시하고 WebSocket으로 계속 보낸다
-            Packet.WEBRTC_OFFER, Packet.WEBRTC_ICE_CANDIDATE -> {
-                binding.tvWaitingNote.text = "WebRTC 요청을 받았지만 아직 미구현입니다.\n(WebSocket으로 데이터 전송)"
-            }
+    private fun onJoined(json: JSONObject) {
+        playerId = json.optString("assigned_id").ifEmpty { "PLAYER_?" }
+        transportMode = json.optString("transport", Packet.TRANSPORT_RELAY)
+        iceServers = RtcClient.parseIceServers(json)
+        streamer.resetSequence()
+        binding.tvWaitingNote.text =
+            if (isP2p()) "PC와 직접 연결(WebRTC) 준비 중..." else "서버 중계(relay) 모드"
+        show(Screen.WAITING)
+        vibrate(60)
+    }
 
-            else -> {
-                // 규격에 실패 응답이 정의되지 않아서, 서버가 무엇을 보내든 화면에 띄워둔다
-                val msg = json.optString("message").ifEmpty { json.toString() }
-                if (screen == Screen.CONNECT) {
-                    setStatus("서버 응답: $msg")
-                    binding.btnJoin.isEnabled = true
-                }
-                Log.w(TAG, "처리하지 않은 메시지: $json")
-            }
+    /** p2p: 입장 직후 PC가 보내는 Offer로 WebRTC 연결을 시작한다 */
+    private fun onOffer(json: JSONObject) {
+        if (!isP2p()) {
+            Log.w(TAG, "relay 모드인데 Offer를 받음 → 무시")
+            return
+        }
+        val sdp = json.optString("sdp")
+        if (sdp.isEmpty()) return
+        rtc?.close()
+        rtc = try {
+            // 시그널링(Answer, ICE)은 WebSocket으로 서버를 거쳐 PC에 전달된다
+            RtcClient(this, iceServers, { message -> ws?.send(message) }, this).also { it.handleOffer(sdp) }
+        } catch (e: Exception) {
+            Log.e(TAG, "WebRTC 초기화 실패", e)
+            leave("직접 연결 준비 실패: ${e.message}")
+            return
+        }
+        binding.tvWaitingNote.text = "PC와 직접 연결 중..."
+    }
+
+    /** 서버 ERROR: {"type":"ERROR","code":"INVALID_PIN","message":"..."} */
+    private fun onServerError(json: JSONObject) {
+        val code = json.optString("code")
+        val msg = json.optString("message").ifEmpty { code }
+        Log.w(TAG, "서버 오류 $code: $msg")
+        if (playerId == null) {
+            // 입장 단계 오류 (INVALID_PIN, ROOM_FULL 등). 연결을 정리하고 다시 시도할 수 있게 한다
+            leave("입장 실패: $msg ($code)")
+            return
+        }
+        // 게임 중 오류는 화면을 유지하고 알림만. 같은 오류가 연달아 와도 3초에 한 번만 띄운다
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastErrorToastMs > 3000) {
+            lastErrorToastMs = now
+            Toast.makeText(this, "서버 오류: $msg", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -191,11 +259,38 @@ class MainActivity : AppCompatActivity(), WsClient.Listener {
         leave("연결 끊김: $reason")
     }
 
+    // ---- WebRTC 콜백 (메인 스레드)
+
+    override fun onChannelOpen() {
+        binding.tvWaitingNote.text = "PC와 직접 연결됨 (WebRTC)"
+        vibrate(40)
+    }
+
+    /** DataChannel로 온 메시지. p2p 모드의 GAME_START는 여기로 온다 */
+    override fun onChannelMessage(json: JSONObject) {
+        Log.d(TAG, "DataChannel 수신: $json")
+        when (json.optString("type")) {
+            Packet.GAME_START -> startGame()
+            else -> Log.w(TAG, "처리하지 않은 DataChannel 메시지: $json")
+        }
+    }
+
+    override fun onRtcFailed(reason: String) {
+        rtc = null
+        leave("직접 연결 실패: $reason\n다시 입장하거나, 서버를 TRANSPORT=relay로 실행하세요")
+    }
+
+    private fun isP2p() = transportMode == Packet.TRANSPORT_P2P
+
     private fun leave(status: String) {
         streamer.stop()
+        rtc?.close()
+        rtc = null
         ws?.close()
         ws = null
         playerId = null
+        transportMode = Packet.TRANSPORT_RELAY
+        iceServers = emptyList()
         testMode = false
         volumeUpHeld = false
         volumeDownHeld = false
@@ -205,18 +300,19 @@ class MainActivity : AppCompatActivity(), WsClient.Listener {
 
     // ------------------------------------------------------------------ 게임
 
-    private fun startCalibration() {
+    private fun startGame() {
         val id = playerId ?: return
-        show(Screen.CALIBRATION)
-        vibrate(120)
-        streamer.start(id, if (testMode) null else ws) { currentButton() }
-    }
-
-    private fun confirmCalibration() {
-        val id = playerId ?: return
-        if (!testMode) ws?.send(Packet.calibrateConfirm(id))
-        vibrate(60)
+        val transport = when {
+            testMode -> null
+            isP2p() -> rtc
+            else -> ws
+        }
+        if (!testMode && transport == null) {
+            Log.w(TAG, "전송 통로가 없음 (p2p 연결 전)")
+        }
         show(Screen.PLAYING)
+        vibrate(120)
+        streamer.start(id, transport) { currentButton() }
     }
 
     /** 서버 없이 센서값과 전송 빈도만 확인하는 모드 */
@@ -225,7 +321,7 @@ class MainActivity : AppCompatActivity(), WsClient.Listener {
         ws = null
         testMode = true
         playerId = "TEST"
-        startCalibration()
+        startGame()
     }
 
     /**
@@ -238,7 +334,7 @@ class MainActivity : AppCompatActivity(), WsClient.Listener {
         else -> 0
     }
 
-    private fun gameScreen() = screen == Screen.CALIBRATION || screen == Screen.PLAYING
+    private fun gameScreen() = screen == Screen.PLAYING
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (gameScreen()) {
@@ -267,13 +363,15 @@ class MainActivity : AppCompatActivity(), WsClient.Listener {
         screen = target
         binding.panelConnect.visibility = if (target == Screen.CONNECT) View.VISIBLE else View.GONE
         binding.panelWaiting.visibility = if (target == Screen.WAITING) View.VISIBLE else View.GONE
-        binding.panelCalibration.visibility = if (target == Screen.CALIBRATION) View.VISIBLE else View.GONE
         binding.panelPlaying.visibility = if (target == Screen.PLAYING) View.VISIBLE else View.GONE
         binding.btnJoin.isEnabled = target == Screen.CONNECT
 
-        val label = if (testMode) "센서 테스트 모드 (전송 안 함)" else playerId.orEmpty()
+        val label = when {
+            testMode -> "센서 테스트 모드 (전송 안 함)"
+            playerId == null -> ""
+            else -> "$playerId · ${if (isP2p()) "직접 연결" else "서버 중계"}"
+        }
         binding.tvWaitingPlayer.text = playerId.orEmpty()
-        binding.tvCalibPlayer.text = label
         binding.tvPlayPlayer.text = label
     }
 
@@ -297,7 +395,6 @@ class MainActivity : AppCompatActivity(), WsClient.Listener {
             sampler.rotationRate, if (testMode) "생성" else "전송", streamer.sentPerSecond
         )
         binding.tvSensor.text = text
-        binding.tvCalibSensor.text = text
         binding.tvButtonState.text = when (currentButton()) {
             1 -> "방어"
             2 -> "강타 충전"

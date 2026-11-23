@@ -76,12 +76,22 @@
       if (i < 8) { used[8][size - 1 - i] = used[size - 1 - i][8] = 1; }
     }
     setModule(size - 8, 8, 1);
+    const verInfo = [0, 0, 0, 0, 0, 0, 0, 0x07c94, 0x085bc, 0x09a99, 0x0a4d3];
+    if (ver >= 7 && verInfo[ver]) {
+      for (let i = 0; i < 18; i++) {
+        const bit = (verInfo[ver] >> i) & 1;
+        const a = Math.floor(i / 3), b = size - 11 + (i % 3);
+        setModule(a, b, bit);
+        setModule(b, a, bit);
+      }
+    }
 
     let bitIdx = 0;
+    let upward = true;
     for (let right = size - 1; right >= 1; right -= 2) {
       if (right === 6) right = 5;
       for (let vert = 0; vert < size; vert++) {
-        const r = ((right + 1) & 2) ? size - 1 - vert : vert;
+        const r = upward ? size - 1 - vert : vert;
         for (let j = 0; j < 2; j++) {
           const c = right - j;
           if (used[r][c]) continue;
@@ -90,20 +100,24 @@
           grid[r][c] = bit ^ ((r + c) % 2 === 0 ? 1 : 0);
         }
       }
+      upward = !upward;
     }
+    // ISO/IEC 18004 형식 정보(EC Level L, Mask 0 -> 0x77c4) 2개 영역 정확한 배치
     const fmt = 0x77c4;
     for (let i = 0; i < 15; i++) {
       const bit = (fmt >> i) & 1;
+      // Copy 1: 좌상단 파인더 패턴 주변 (수직 0..5, 7, 8 -> 수평 7, 5..0)
       if (i < 6) grid[i][8] = bit;
       else if (i < 8) grid[i + 1][8] = bit;
-      else grid[8][size - 15 + i] = bit;
+      else if (i === 8) grid[8][7] = bit;
+      else grid[8][14 - i] = bit;
+      // Copy 2: 우상단 수평 (size-1..size-8) 및 좌하단 수직 (size-7..size-1)
       if (i < 8) grid[8][size - 1 - i] = bit;
-      else if (i < 9) grid[7][8] = bit;
-      else grid[14 - i][8] = bit;
+      else grid[size - 15 + i][8] = bit;
     }
     let path = '';
-    for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) if (grid[r][c]) path += `M${c + 2},${r + 2}h1v1h-1z`;
-    return `<svg viewBox="0 0 ${size + 4} ${size + 4}" shape-rendering="crispEdges" role="img" aria-label="방 입장 QR 코드"><rect width="100%" height="100%" fill="#fff"/><path d="${path}" fill="#172626"/></svg>`;
+    for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) if (grid[r][c]) path += `M${c + 4},${r + 4}h1v1h-1z`;
+    return `<svg viewBox="0 0 ${size + 8} ${size + 8}" shape-rendering="crispEdges" role="img" aria-label="방 입장 QR 코드"><rect width="100%" height="100%" fill="#fff"/><path d="${path}" fill="#172626"/></svg>`;
   }
 
   function initTitle(defaultTitle = 'GUM FIELD') {

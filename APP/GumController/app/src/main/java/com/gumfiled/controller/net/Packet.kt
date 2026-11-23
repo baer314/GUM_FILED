@@ -5,40 +5,60 @@ import com.gumfiled.controller.sensor.SensorSnapshot
 import org.json.JSONObject
 
 /**
- * "입, 출력 규격.docx"에 정의된 패킷.
+ * 앱 ↔ 서버/PC 패킷.
+ * 실제 구현(Server/server.js, PC/network.js, PC/protocol.js) 기준으로 맞춰져 있다.
  * 규격이 바뀌면 이 파일만 고치면 된다.
  */
 object Packet {
     // ---- 서버/PC → 앱 ----
     const val JOIN_SUCCESS = "JOIN_SUCCESS"
     const val GAME_START = "GAME_START"
+    const val ERROR = "ERROR"
+    const val ROOM_CLOSED = "ROOM_CLOSED"
     const val WEBRTC_OFFER = "WEBRTC_OFFER"
     const val WEBRTC_ICE_CANDIDATE = "WEBRTC_ICE_CANDIDATE"
 
-    // ---- 앱 → 서버/PC ----
+    /** JOIN_SUCCESS.transport 값 */
+    const val TRANSPORT_P2P = "p2p"
+    const val TRANSPORT_RELAY = "relay"
 
-    /** 규격 5번: 대기방 입장 요청 */
+    /** WebRTC 시그널링 상대 (서버가 정한 PC의 ID) */
+    const val HOST_ID = "PC_HOST"
+
+    // ---- 앱 → 서버 ----
+
+    /** 대기방 입장 요청 */
     fun joinRoom(pin: String): String = JSONObject()
         .put("type", "JOIN_ROOM")
         .put("pin", pin)
         .put("client_type", "CONTROLLER")
         .toString()
 
-    /**
-     * 규격 21~22번: 영점 확인.
-     * button_input 값은 규격서에 "예: 0 또는 별도 확인 키 코드"로만 되어 있어 0으로 둠 → 팀 확인 필요
-     */
-    fun calibrateConfirm(senderId: String): String = JSONObject()
-        .put("type", "CALIBRATE_CONFIRM")
-        .put("sender_id", senderId)
-        .put("button_input", 0)
+    /** WebRTC: PC의 Offer에 대한 응답 */
+    fun webrtcAnswer(sdp: String): String = JSONObject()
+        .put("type", "WEBRTC_ANSWER")
+        .put("target_id", HOST_ID)
+        .put("sdp", sdp)
+        .toString()
+
+    /** WebRTC: 내 ICE 후보. 필드 이름은 브라우저(RTCIceCandidate.toJSON) 형식에 맞춘다 */
+    fun webrtcIceCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int): String = JSONObject()
+        .put("type", "WEBRTC_ICE_CANDIDATE")
+        .put("target_id", HOST_ID)
+        .put(
+            "candidate", JSONObject()
+                .put("candidate", candidate)
+                .put("sdpMid", sdpMid ?: JSONObject.NULL)
+                .put("sdpMLineIndex", sdpMLineIndex)
+        )
         .toString()
 
     /**
-     * 규격 24번: 센서 및 조작 데이터.
+     * 센서 및 조작 데이터.
+     * seq: 0부터 1씩 증가. PC는 이전 값 이하인 패킷을 버리고, 건너뛴 번호로 손실을 계산한다.
      * button: 0 입력 없음, 1 볼륨 상(방어), 2 볼륨 하(강타 충전)
      */
-    fun sensor(senderId: String, timestamp: Long, s: SensorSnapshot, button: Int): String {
+    fun sensor(senderId: String, seq: Long, timestamp: Long, s: SensorSnapshot, button: Int): String {
         val q = s.rotation // [w, x, y, z]
         val payload = JSONObject()
             .put(
@@ -56,6 +76,7 @@ object Packet {
         return JSONObject()
             .put("type", "SENSOR")
             .put("sender_id", senderId)
+            .put("seq", seq)
             .put("timestamp", timestamp)
             .put("payload", payload)
             .toString()
