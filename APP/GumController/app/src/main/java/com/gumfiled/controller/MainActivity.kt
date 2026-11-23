@@ -12,6 +12,8 @@ import android.os.VibratorManager
 import android.util.Log
 import android.view.KeyEvent
 import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -29,7 +31,8 @@ import java.util.Locale
 
 /**
  * 화면 흐름
- *   CONNECT ──JOIN_SUCCESS──▶ WAITING ──GAME_START──▶ CALIBRATION ──확인──▶ PLAYING
+ *   CONNECT ──JOIN_SUCCESS──▶ WAITING ──GAME_START──▶ PLAYING
+ * 영점은 PC에서 처리하므로 앱에는 영점 화면이 없다.
  * GAME_START 이후 SENSOR 패킷을 계속 보낸다.
  *
  * 전송 방식은 서버가 JOIN_SUCCESS.transport로 알려준다.
@@ -38,7 +41,7 @@ import java.util.Locale
  */
 class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener {
 
-    private enum class Screen { CONNECT, WAITING, CALIBRATION, PLAYING }
+    private enum class Screen { CONNECT, WAITING, PLAYING }
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var sampler: SensorSampler
@@ -88,11 +91,12 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
         }
 
         binding.btnScan.setOnClickListener { startQrScan() }
-        binding.btnJoin.setOnClickListener {
-            join(binding.etServer.text.toString(), binding.etPin.text.toString())
+        binding.btnJoin.setOnClickListener { joinFromInput() }
+        // 키패드의 '이동' 키로도 입장
+        binding.etPin.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_GO) { joinFromInput(); true } else false
         }
-        binding.btnSensorTest.setOnClickListener { startSensorTest() }
-        binding.btnConfirm.setOnClickListener { confirmCalibration() }
+        binding.btnSensorTest.setOnClickListener { hideKeyboard(); startSensorTest() }
         binding.btnLeaveWaiting.setOnClickListener { leave("나갔습니다") }
         binding.btnLeavePlaying.setOnClickListener { leave("나갔습니다") }
 
@@ -129,7 +133,21 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
 
     // ------------------------------------------------------------------ 연결
 
+    private fun joinFromInput() {
+        hideKeyboard()
+        join(binding.etServer.text.toString(), binding.etPin.text.toString())
+    }
+
+    /** 입장 버튼을 눌러도 키패드가 남아 화면을 가리던 문제 → 포커스를 빼고 키패드를 내린다 */
+    private fun hideKeyboard() {
+        val focused = currentFocus ?: binding.root
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+            .hideSoftInputFromWindow(focused.windowToken, 0)
+        focused.clearFocus()
+    }
+
     private fun startQrScan() {
+        hideKeyboard()
         val options = ScanOptions().apply {
             setDesiredBarcodeFormats(ScanOptions.QR_CODE)
             setPrompt("PC 화면의 QR 코드를 비춰주세요")
@@ -179,7 +197,7 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
         if (type != Packet.WEBRTC_ICE_CANDIDATE) Log.d(TAG, "WS 수신: $json")
         when (type) {
             Packet.JOIN_SUCCESS -> onJoined(json)
-            Packet.GAME_START -> startCalibration() // relay 모드에서만 이 경로로 온다
+            Packet.GAME_START -> startGame() // relay 모드에서만 이 경로로 온다
             Packet.WEBRTC_OFFER -> onOffer(json)
             Packet.WEBRTC_ICE_CANDIDATE -> rtc?.handleRemoteCandidate(json.optJSONObject("candidate"))
             Packet.ERROR -> onServerError(json)
@@ -252,7 +270,7 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
     override fun onChannelMessage(json: JSONObject) {
         Log.d(TAG, "DataChannel 수신: $json")
         when (json.optString("type")) {
-            Packet.GAME_START -> startCalibration()
+            Packet.GAME_START -> startGame()
             else -> Log.w(TAG, "처리하지 않은 DataChannel 메시지: $json")
         }
     }
@@ -282,7 +300,7 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
 
     // ------------------------------------------------------------------ 게임
 
-    private fun startCalibration() {
+    private fun startGame() {
         val id = playerId ?: return
         val transport = when {
             testMode -> null
@@ -292,20 +310,9 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
         if (!testMode && transport == null) {
             Log.w(TAG, "전송 통로가 없음 (p2p 연결 전)")
         }
-        show(Screen.CALIBRATION)
+        show(Screen.PLAYING)
         vibrate(120)
         streamer.start(id, transport) { currentButton() }
-    }
-
-    /**
-     * 영점 확인. 서버와 PC에 CALIBRATE_CONFIRM 처리 코드가 없어서(보내면 ERROR) 지금은 화면만 넘긴다.
-     * 팀에서 앱 버튼으로 영점을 잡기로 하면 아래 주석을 해제한다.
-     */
-    private fun confirmCalibration() {
-        if (playerId == null) return
-        // if (!testMode) ws?.send(Packet.calibrateConfirm(playerId!!))
-        vibrate(60)
-        show(Screen.PLAYING)
     }
 
     /** 서버 없이 센서값과 전송 빈도만 확인하는 모드 */
@@ -314,7 +321,7 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
         ws = null
         testMode = true
         playerId = "TEST"
-        startCalibration()
+        startGame()
     }
 
     /**
@@ -327,7 +334,7 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
         else -> 0
     }
 
-    private fun gameScreen() = screen == Screen.CALIBRATION || screen == Screen.PLAYING
+    private fun gameScreen() = screen == Screen.PLAYING
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (gameScreen()) {
@@ -356,7 +363,6 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
         screen = target
         binding.panelConnect.visibility = if (target == Screen.CONNECT) View.VISIBLE else View.GONE
         binding.panelWaiting.visibility = if (target == Screen.WAITING) View.VISIBLE else View.GONE
-        binding.panelCalibration.visibility = if (target == Screen.CALIBRATION) View.VISIBLE else View.GONE
         binding.panelPlaying.visibility = if (target == Screen.PLAYING) View.VISIBLE else View.GONE
         binding.btnJoin.isEnabled = target == Screen.CONNECT
 
@@ -366,7 +372,6 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
             else -> "$playerId · ${if (isP2p()) "직접 연결" else "서버 중계"}"
         }
         binding.tvWaitingPlayer.text = playerId.orEmpty()
-        binding.tvCalibPlayer.text = label
         binding.tvPlayPlayer.text = label
     }
 
@@ -390,7 +395,6 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
             sampler.rotationRate, if (testMode) "생성" else "전송", streamer.sentPerSecond
         )
         binding.tvSensor.text = text
-        binding.tvCalibSensor.text = text
         binding.tvButtonState.text = when (currentButton()) {
             1 -> "방어"
             2 -> "강타 충전"

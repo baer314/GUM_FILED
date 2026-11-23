@@ -6,7 +6,7 @@ package com.gumfiled.controller.net
  *  - relay 모드: WsClient (서버를 거치는 WebSocket)
  *  - p2p 모드:   RtcClient (PC와 직접 연결되는 WebRTC DataChannel)
  *
- * 어느 쪽을 쓸지는 서버가 JOIN_SUCCESS.transport로 알려준다 (MainActivity.startCalibration).
+ * 어느 쪽을 쓸지는 서버가 JOIN_SUCCESS.transport로 알려준다 (MainActivity.startGame).
  * 패킷 형식은 Packet이 만들고, 여기서는 문자열을 보내기만 한다.
  */
 interface Transport {

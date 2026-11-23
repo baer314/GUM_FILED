@@ -54,16 +54,6 @@ object Packet {
         .toString()
 
     /**
-     * 영점 확인. 서버와 PC에 아직 처리 코드가 없어서 보내면 ERROR가 돌아온다.
-     * 팀에서 앱 버튼으로 영점을 잡기로 하면 MainActivity.confirmCalibration()에서 다시 사용한다.
-     */
-    fun calibrateConfirm(senderId: String): String = JSONObject()
-        .put("type", "CALIBRATE_CONFIRM")
-        .put("sender_id", senderId)
-        .put("button_input", 0)
-        .toString()
-
-    /**
      * 센서 및 조작 데이터.
      * seq: 0부터 1씩 증가. PC는 이전 값 이하인 패킷을 버리고, 건너뛴 번호로 손실을 계산한다.
      * button: 0 입력 없음, 1 볼륨 상(방어), 2 볼륨 하(강타 충전)

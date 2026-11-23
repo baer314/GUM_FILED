@@ -37,7 +37,7 @@ APP/
 | 파일 | 역할 |
 |---|---|
 | `Config.kt` | 전송 주기(60Hz), 가속도 종류, p2p 연결 제한 시간 등 |
-| `MainActivity.kt` | 화면 전환(연결 → 대기 → 영점 → 게임), 서버 메시지 처리, transport 선택, 볼륨 키, QR |
+| `MainActivity.kt` | 화면 전환(연결 → 대기 → 게임), 서버 메시지 처리, transport 선택, 볼륨 키, QR |
 | `net/Packet.kt` | 모든 메시지 생성과 type 상수. **규격이 바뀌면 여기만 수정** |
 | `net/Transport.kt` | SENSOR 전송 통로 인터페이스 |
 | `net/WsClient.kt` | 서버와의 WebSocket (입장, WebRTC 시그널링, relay 모드의 GAME_START·SENSOR) |
@@ -66,12 +66,12 @@ p2p:   앱 ─JOIN_ROOM→ 서버 ─JOIN_SUCCESS→ 앱
 - [x] p2p 모드 (WebRTC DataChannel), 15초 안에 연결 안 되면 실패 처리
 - [x] `ERROR` 처리 (입장 실패 시 연결 화면 복귀, 게임 중에는 알림), `ROOM_CLOSED` 처리
 - [x] 볼륨 키 → button 0/1/2
-- [ ] 영점: 서버·PC에 `CALIBRATE_CONFIRM` 처리가 없어 지금은 확인 버튼이 화면만 넘김
+- [x] 영점 화면 제거 (영점은 PC에서 처리, `GAME_START` 받으면 바로 게임 화면)
+- [x] 입장·QR 스캔 시 키패드 내림, PIN 입력 후 키패드 '이동'으로 바로 입장
 - [ ] 진동 피드백, 게임 종료 처리 (PC → 앱 메시지가 아직 없음)
 
 ## 팀 확인이 필요한 항목
 
-1. 영점 조절을 PC에서 할지, 앱 버튼(`CALIBRATE_CONFIRM`)으로 할지
-2. 타격·방어·게임 종료를 앱에 알려줄 메시지 (진동 피드백용)
-3. 볼륨 키 두 개 동시 입력 → 현재 방어(1) 우선
-4. 각속도 전송 여부 → `Config.INCLUDE_ANGULAR_VELOCITY` (기본 false)
+1. 타격·방어·게임 종료를 앱에 알려줄 메시지 (진동 피드백용)
+2. 볼륨 키 두 개 동시 입력 → 현재 방어(1) 우선
+3. 각속도 전송 여부 → `Config.INCLUDE_ANGULAR_VELOCITY` (기본 false)
