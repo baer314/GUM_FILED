@@ -263,7 +263,8 @@ test('P2P signaling: role checks, room isolation, trusted sender and candidate r
 test('HTTP allowlist and explicit public QR address', async (t) => {
   const f = await fixture(t, 'relay', { publicBaseUrl: 'https://example.test' });
   assert.deepEqual(JSON.parse(f.room.qr_data), { server_url: 'wss://example.test/ws', pin: f.room.room_pin, transport: 'relay' });
-  for (const file of ['/', '/controller.html', '/protocol.js', '/network.js', '/front.js', '/inGameFront.js', '/inGameBack.js', '/back.js', '/controller.js', '/style.css', '/health']) {
+  for (const file of ['/', '/controller.html', '/protocol.js', '/network.js', '/front.js', '/inGameFront.js', '/inGameBack.js', '/back.js', '/controller.js', '/style.css', '/health',
+    '/Graphic/Background.js', '/Graphic/Arm.js', '/Graphic/Head.js', '/Graphic/Sword.js', '/inGameDev.js']) {
     const response = await fetch(f.base + file); assert.equal(response.status, 200, file);
   }
   for (const file of ['/server.js', '/package.json', '/README.txt', '/.env', '/..%2fserver.js']) {
@@ -302,10 +303,17 @@ test('PC module: callbacks, sequence gaps, duplicate rejection and slot reuse', 
   assert.equal((await one.next()).type, 'GAME_START'); assert.equal((await two.next()).type, 'GAME_START');
   let received = once(events, 'sensor'); one.send(sample('PLAYER_1', 0));
   assert.equal((await received)[0][0], 'PLAYER_1');
-  one.send(sample('PLAYER_1', 0));
+  for (const [seq, button] of [[0, 2], [2, 1], [1, 2]]) {
+    const packet = sample('PLAYER_1', seq);
+    packet.payload.button = button;
+    one.send(packet);
+  }
   received = once(events, 'sensor'); one.send(sample('PLAYER_1', 3)); await received;
   const stats = network.getStats().find((s) => s.id === 'PLAYER_1');
-  assert.equal(stats.count, 2); assert.equal(stats.missing, 2); assert.equal(stats.invalid, 1);
+  assert.equal(stats.count, 3); assert.equal(stats.missing, 1); assert.equal(stats.invalid, 0);
+  assert.equal(network.consumeButton('PLAYER_1'), 1, 'a newer numbered input can still change the button');
+  assert.equal(network.consumeButton('PLAYER_1'), 0);
+  assert.equal(network.consumeButton('PLAYER_1'), 0);
   received = once(events, 'sensor'); two.send(sample('PLAYER_2', 4)); await received;
   assert.equal(network.getStats().find((s) => s.id === 'PLAYER_2').missing, 4);
   const disconnected = once(events, 'disconnected'); await one.close(); await disconnected;

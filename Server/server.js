@@ -161,6 +161,11 @@ function createServer({ transport = 'p2p', publicBaseUrl = '',
         for (const player of room.players.values()) send(player, { type: 'GAME_START' });
       } else if (!isHost && protocol.sensor(m)) {
         if (m.sender_id !== ws.memberId) { error(ws, 'INVALID_SENDER', '할당된 플레이어 ID를 사용하세요.'); return; }
+        if (m.seq !== undefined) {
+          // Reject old packets before they can replace motion or generate a button transition.
+          if (m.seq <= (ws.lastSensorSeq ?? -1)) return;
+          ws.lastSensorSeq = m.seq;
+        }
         const { button } = m.payload;
         if (button !== (ws.lastButton ?? 0)) {
           // Button transitions bypass the latest-only sensor queue on the same ordered connection.
