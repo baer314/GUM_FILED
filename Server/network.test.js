@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { readFileSync } = require('node:fs');
 
-function browser(t) {
+function browser(t, { earlyIce = false } = {}) {
   const sockets = [], connections = [], timers = new Map();
   class Socket {
     static OPEN = 1;
@@ -20,7 +20,10 @@ function browser(t) {
         send(text) { this.sent.push(JSON.parse(text)); }, close() { this.readyState = 'closed'; } };
     }
     async createOffer() { return { type: 'offer', sdp: 'offer' }; }
-    async setLocalDescription(value) { this.localDescription = value; }
+    async setLocalDescription(value) {
+      this.localDescription = value;
+      if (earlyIce) this.onicecandidate({ candidate: { toJSON: () => ({ candidate: 'early', sdpMid: '0', sdpMLineIndex: 0 }) } });
+    }
     async getStats() { return new Map(); }
     close() { this.connectionState = 'closed'; }
   }
@@ -53,6 +56,33 @@ test('room creation times out if a socket never opens', async (t) => {
   assert.equal(timer.ms, 15000); timer.callback();
   assert.match((await outcome).message, /시간|응답/);
   assert.equal(b.sockets[0].readyState, 3);
+});
+
+test('PC sends the offer before locally generated ICE so Android can create the session first', async (t) => {
+  const b = browser(t, { earlyIce: true });
+  const ws = await b.room();
+  for (const id of ['PLAYER_1', 'PLAYER_2']) {
+    const signals = ws.sent.filter((m) => m.target_id === id);
+    assert.deepEqual(signals.map((m) => m.type), ['WEBRTC_OFFER', 'WEBRTC_ICE_CANDIDATE']);
+    assert.equal(signals[1].candidate.candidate, 'early');
+  }
+});
+
+test('PC accepts Android P2P sensor sequence and exposes the short button separately', async (t) => {
+  const b = browser(t);
+  await b.room();
+  assert.equal(b.network.sendGameStart(), 2);
+  const sender = b.connections[0].channel;
+  for (const [seq, button, x] of [[0, 1, 1.3], [1, 0, 2.8]]) {
+    sender.onmessage({ data: JSON.stringify({ type: 'SENSOR', sender_id: 'PLAYER_1', seq, timestamp: Date.now(),
+      payload: { rotation_vector: { x: 0, y: 0, z: 0, w: 1 }, acceleration: { x, y: 0, z: 0 }, button } }) });
+  }
+  const { latest, count, missing } = b.network.getStats()[0];
+  assert.equal(count, 2);
+  assert.equal(missing, 0);
+  assert.equal(latest.payload.acceleration.x, 2.8);
+  assert.equal(b.network.consumeButton('PLAYER_1'), 1);
+  assert.equal(b.network.consumeButton('PLAYER_1'), 0);
 });
 
 test('start validates every ready channel before sending to any player', async (t) => {

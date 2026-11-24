@@ -6,6 +6,7 @@ const path = require('node:path');
 const { randomInt } = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 const protocol = require('../PC/protocol.js');
+const SENSOR_BUFFER_LIMIT = 1024;
 
 function createServer({ transport = 'p2p', publicBaseUrl = '',
   stunUrl = 'stun:stun.l.google.com:19302', heartbeatMs = 30000 } = {}) {
@@ -70,9 +71,18 @@ function createServer({ transport = 'p2p', publicBaseUrl = '',
     if (ws?.readyState !== WebSocket.OPEN) return false;
     // ponytail: disconnect slow peers at 256 KiB; add flow control if larger traffic is needed.
     if (ws.bufferedAmount > 262144) { ws.close(1013, 'Slow receiver'); return false; }
-    ws.send(JSON.stringify(message)); return true;
+    ws.send(JSON.stringify(message), ws.memberId === 'PC_HOST' ? ws.room?.onWrite : undefined);
+    return true;
   };
   const error = (ws, code, message) => send(ws, { type: 'ERROR', code, message });
+
+  function flushSensors(room) {
+    for (const [id, text] of room.pendingSensors) {
+      if (room.host.readyState !== WebSocket.OPEN || room.host.bufferedAmount >= SENSOR_BUFFER_LIMIT) return;
+      room.pendingSensors.delete(id);
+      room.host.send(text, room.onWrite);
+    }
+  }
   const endpoint = () => {
     const base = publicUrl || new URL(`http://127.0.0.1:${server.address().port}`);
     const url = new URL('/ws', base);
@@ -92,17 +102,22 @@ function createServer({ transport = 'p2p', publicBaseUrl = '',
     ws.on('pong', () => { ws.alive = true; });
     ws.on('error', () => {}); // ws also emits close, which releases membership below.
     ws.on('message', (data, isBinary) => {
-      const m = isBinary ? null : protocol.parse(data.toString());
+      const text = isBinary ? null : data.toString();
+      const m = protocol.parse(text);
       if (!m) { error(ws, 'INVALID_MESSAGE', 'JSON 메시지 형식을 확인하세요.'); return; }
       if (m.type === 'CREATE_ROOM' || m.type === 'JOIN_ROOM') {
         if (ws.room) { error(ws, 'ALREADY_JOINED', '이미 방에 연결되어 있습니다.'); return; }
         if (m.type === 'CREATE_ROOM') {
           if (m.client_type !== 'PC_HOST') { error(ws, 'INVALID_MESSAGE', 'PC_HOST가 필요합니다.'); return; }
           const pin = newPin();
-          const room = { pin, host: ws, players: new Map() };
+          const room = { pin, host: ws, players: new Map(), pendingSensors: new Map(), onWrite(cause) {
+            if (cause) ws.terminate();
+            else flushSensors(room);
+          } };
           rooms.set(pin, room); ws.room = room; ws.memberId = 'PC_HOST';
           const qr_data = JSON.stringify({ server_url: endpoint(), pin, transport });
-          send(ws, { type: 'ROOM_CREATED', room_pin: pin, qr_data, transport, ice_servers: iceServers });
+          send(ws, { type: 'ROOM_CREATED', room_pin: pin, qr_data, transport, ice_servers: iceServers,
+            button_events: transport === 'relay' });
         } else {
           if (m.client_type !== 'CONTROLLER' || typeof m.pin !== 'string') {
             error(ws, 'INVALID_MESSAGE', 'CONTROLLER와 pin이 필요합니다.'); return;
@@ -146,7 +161,20 @@ function createServer({ transport = 'p2p', publicBaseUrl = '',
         for (const player of room.players.values()) send(player, { type: 'GAME_START' });
       } else if (!isHost && protocol.sensor(m)) {
         if (m.sender_id !== ws.memberId) { error(ws, 'INVALID_SENDER', '할당된 플레이어 ID를 사용하세요.'); return; }
-        send(room.host, m);
+        if (m.seq !== undefined) {
+          // Reject old packets before they can replace motion or generate a button transition.
+          if (m.seq <= (ws.lastSensorSeq ?? -1)) return;
+          ws.lastSensorSeq = m.seq;
+        }
+        const { button } = m.payload;
+        if (button !== (ws.lastButton ?? 0)) {
+          // Button transitions bypass the latest-only sensor queue on the same ordered connection.
+          if (!send(room.host, { type: 'BUTTON_CHANGE', sender_id: ws.memberId, button })) return;
+          ws.lastButton = button;
+        }
+        // Coalesce only when the socket's send queue is actually backed up.
+        room.pendingSensors.set(ws.memberId, text);
+        flushSensors(room);
       } else { error(ws, 'INVALID_MESSAGE', '이 연결에서 보낼 수 없는 메시지입니다.'); }
     });
     ws.on('close', () => {
@@ -155,6 +183,7 @@ function createServer({ transport = 'p2p', publicBaseUrl = '',
       ws.room = null;
       if (ws.memberId === 'PC_HOST') {
         rooms.delete(room.pin);
+        room.pendingSensors.clear();
         for (const player of room.players.values()) {
           player.room = null;
           send(player, { type: 'ROOM_CLOSED' }); player.close(1000, 'Host left');
@@ -162,6 +191,7 @@ function createServer({ transport = 'p2p', publicBaseUrl = '',
         room.players.clear();
       } else if (room.players.get(ws.memberId) === ws) {
         room.players.delete(ws.memberId);
+        room.pendingSensors.delete(ws.memberId);
         send(room.host, { type: 'PLAYER_LEFT', assigned_id: ws.memberId });
       }
     });

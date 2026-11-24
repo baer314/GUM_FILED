@@ -9,6 +9,10 @@
   const error = (code, message, playerId) => emit('onError', { code, message, playerId });
   function state(peer, value) {
     if (peer.state === value) return;
+    if (value === 'disconnected') {
+      peer.buttonQueue.length = 0;
+      peer.latestButton = peer.appliedButton = 0;
+    }
     peer.state = value; emit('onPlayerState', peer.id, value);
   }
   function dispose(peer) {
@@ -31,6 +35,22 @@
     if (socket.bufferedAmount > 262144) throw new Error('서버 송신 대기열이 가득 찼습니다.');
     socket.send(JSON.stringify(message));
   }
+  function receiveButton(peer, button) {
+    if (peer.state !== 'ready' || ![0, 1, 2].includes(button) || peer.latestButton === button) return;
+    peer.latestButton = button;
+    if (peer.buttonQueue.length >= 128) {
+      peer.buttonQueue.length = 0;
+      error('BUTTON_QUEUE_OVERFLOW', '버튼 입력이 너무 많이 쌓여 현재 상태로 맞췄습니다.', peer.id);
+    }
+    peer.buttonQueue.push(button);
+  }
+  function consumeButton(id) {
+    // Read once per game tick so a short press and its release are observed separately.
+    const peer = peers.get(id);
+    if (peer?.state !== 'ready') return 0;
+    if (peer.buttonQueue.length) peer.appliedButton = peer.buttonQueue.shift();
+    return peer.appliedButton;
+  }
   function receive(peer, message) {
     if (peers.get(peer.id) !== peer) return;
     if (!message || message.sender_id !== peer.id) {
@@ -47,20 +67,30 @@
       }
       peer.count++;
       peer.lastReceivedAt = performance.now(); peer.latest = message;
+      if (!room.button_events) receiveButton(peer, message.payload.button);
       emit('onSensorData', peer.id, message.timestamp, message.payload);
     } else { peer.invalid++; error('INVALID_INPUT', '센서 데이터 형식을 확인하세요.', peer.id); }
   }
   async function addPlayer(id, token) {
     if (!P.playerId(id) || peers.has(id)) throw new Error('중복 또는 잘못된 플레이어 ID');
     const peer = { id, state: null, pc: null, channel: null, pending: [],
+      buttonQueue: [], latestButton: 0, appliedButton: 0,
       lastSeq: -1, count: 0, missing: 0, invalid: 0, latest: null, lastReceivedAt: null };
     peers.set(id, peer); state(peer, 'joined');
     if (room.transport === 'relay') { state(peer, 'ready'); return; }
     const active = () => token === generation && peers.get(id) === peer;
     try {
       const pc = peer.pc = new RTCPeerConnection({ iceServers: room.ice_servers });
+      let offerSent = false;
+      const earlyCandidates = [];
+      const sendCandidate = (candidate) => send({ type: 'WEBRTC_ICE_CANDIDATE', target_id: id, candidate });
       pc.onicecandidate = ({ candidate }) => {
-        if (candidate && active()) send({ type: 'WEBRTC_ICE_CANDIDATE', target_id: id, candidate: candidate.toJSON() });
+        if (!candidate || !active()) return;
+        const value = candidate.toJSON();
+        // The Android app creates its RTC session when it receives the offer.
+        if (!offerSent) { earlyCandidates.push(value); return; }
+        try { sendCandidate(value); }
+        catch (cause) { error('CONNECTION_ERROR', cause.message, id); }
       };
       pc.onconnectionstatechange = () => {
         if (!active()) return;
@@ -75,7 +105,10 @@
       channel.onerror = () => { if (active()) error('CHANNEL_ERROR', 'DataChannel 오류', id); };
       channel.onmessage = ({ data }) => { if (active()) receive(peer, P.parse(data)); };
       await pc.setLocalDescription(await pc.createOffer());
-      if (active()) send({ type: 'WEBRTC_OFFER', target_id: id, sdp: pc.localDescription.sdp });
+      if (!active()) return;
+      send({ type: 'WEBRTC_OFFER', target_id: id, sdp: pc.localDescription.sdp });
+      offerSent = true;
+      for (const candidate of earlyCandidates.splice(0)) sendCandidate(candidate);
     } catch (cause) {
       if (active()) { state(peer, 'disconnected'); error('P2P_FAILED', cause.message, id); }
     }
@@ -123,6 +156,9 @@
             } else if (m.type === 'ERROR') {
               error(m.code, m.message);
               if (!room) { clearRoomTimer(); pendingReject?.(new Error(m.message)); pendingReject = null; }
+            } else if (m.type === 'BUTTON_CHANGE' && room?.button_events) {
+              const peer = peers.get(m.sender_id);
+              if (peer) receiveButton(peer, m.button);
             } else if (m.type === 'SENSOR') {
               const peer = peers.get(m.sender_id);
               if (room?.transport !== 'relay') throw new Error('직접 연결 모드에 서버 중계 입력이 도착했습니다.');
@@ -154,6 +190,10 @@
       }
       for (const peer of ready) peer.channel.send(JSON.stringify({ type: 'GAME_START' }));
     }
+    for (const peer of ready) {
+      peer.buttonQueue.length = 0;
+      peer.appliedButton = peer.latestButton;
+    }
     return ready.length;
   }
   function getStats() {
@@ -183,5 +223,5 @@
     }
     return result;
   }
-  root.GameNetwork = { createRoom, sendGameStart, close, getStats, getConnectionStats };
+  root.GameNetwork = { createRoom, sendGameStart, close, getStats, getConnectionStats, consumeButton };
 })(globalThis);
