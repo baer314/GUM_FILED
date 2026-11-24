@@ -6,9 +6,11 @@
 
   const DEV_INPUT_IDS = [
     'dur-attack',
+    'attack-boost-angle',
     'attack-cooldown',
     'attack-rotation-damping',
     'sensor-tilt-smoothing',
+    'accel-aim-gain',
     'dur-attack-hit',
     'dur-attack-fail',
     'dur-parry-stun',
@@ -63,6 +65,9 @@
         <label>공격 판정 → 기본공격(ATTACK) 유지시간 (초)
           <input id="dur-attack" type="number" min="0" max="60" step="0.1" value="0.5">
         </label>
+        <label>공격 시 추가 스윙 각도 (오버슈트 후 원위치 복귀, 도 0~90)
+          <input id="attack-boost-angle" type="number" min="0" max="90" step="2" value="32">
+        </label>
         <label>공격 후 쿨다운 / 후딜레이 (초)
           <input id="attack-cooldown" type="number" min="0" max="5" step="0.05" value="0.2">
         </label>
@@ -71,6 +76,9 @@
         </label>
         <label>평상시 검 회전 보간 계수 (0.05~1.0, 클수록 빠름)
           <input id="sensor-tilt-smoothing" type="number" min="0.05" max="1" step="0.05" value="0.65">
+        </label>
+        <label>선형가속도 보조 조준 감도 (0~3.0, 0=끔)
+          <input id="accel-aim-gain" type="number" min="0" max="3" step="0.05" value="0.45">
         </label>
         <label>공격 성공 → 상대 피격(HIT) 시간 (초)
           <input id="dur-attack-hit" type="number" min="0" max="60" step="0.1" value="1.0">
@@ -296,6 +304,10 @@
       if ($('dur-attack-fail')) $('dur-attack-fail').value = String(dur.ATTACK_FAIL_STUN ?? 1.0);
       if ($('dur-parry-stun')) $('dur-parry-stun').value = String(dur.PARRY_STUN ?? 1.0);
     }
+    const atkBoost = root.InGameBack?.getAttackBoostAngleDeg?.();
+    if (atkBoost !== undefined && $('attack-boost-angle')) {
+      $('attack-boost-angle').value = String(atkBoost);
+    }
     const atkCd = root.InGameBack?.getAttackCooldownDuration?.();
     if (atkCd !== undefined && $('attack-cooldown')) {
       $('attack-cooldown').value = String(atkCd);
@@ -307,6 +319,10 @@
     const tiltSmooth = root.InGameBack?.getSensorTiltSmoothing?.();
     if (tiltSmooth !== undefined && $('sensor-tilt-smoothing')) {
       $('sensor-tilt-smoothing').value = String(tiltSmooth);
+    }
+    const accelGain = root.InGameBack?.getAccelAimGain?.();
+    if (accelGain !== undefined && $('accel-aim-gain')) {
+      $('accel-aim-gain').value = String(accelGain);
     }
     const mult = root.InGameBack?.getArmSwingMultiplier?.();
     if (mult !== undefined && $('arm-swing-multiplier')) {
@@ -379,6 +395,9 @@
       ATTACK_FAIL_STUN: $('dur-attack-fail')?.value,
       PARRY_STUN: $('dur-parry-stun')?.value,
     });
+    if ($('attack-boost-angle')) {
+      root.InGameBack?.setAttackBoostAngleDeg?.($('attack-boost-angle').value);
+    }
     if ($('attack-cooldown')) {
       root.InGameBack?.setAttackCooldownDuration?.($('attack-cooldown').value);
     }
@@ -387,6 +406,9 @@
     }
     if ($('sensor-tilt-smoothing')) {
       root.InGameBack?.setSensorTiltSmoothing?.($('sensor-tilt-smoothing').value);
+    }
+    if ($('accel-aim-gain')) {
+      root.InGameBack?.setAccelAimGain?.($('accel-aim-gain').value);
     }
     if ($('arm-swing-multiplier')) {
       root.InGameBack?.setArmSwingMultiplier?.($('arm-swing-multiplier').value);

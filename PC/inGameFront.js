@@ -26,6 +26,17 @@
   let currentArenaShiftX = 0;
   const STUN_CAMERA_PULLBACK_MAX = 0.55;
   const HIT_CAMERA_PULLBACK_MAX = 1.0;
+  const BASE_CAMERA_FOV = 60;
+  const ATTACK_CAMERA_FOV = 51; // 공격 판정 시 순간적으로 좁혀지는 카메라 시야각(FOV)
+  const cameraFovs = {
+    PLAYER_1: BASE_CAMERA_FOV,
+    PLAYER_2: BASE_CAMERA_FOV,
+  };
+  const lastHitTimestamps = {
+    PLAYER_1: 0,
+    PLAYER_2: 0,
+  };
+  let lastClashTimestamp = 0;
   const cameraShakeOffsets = {
     PLAYER_1: { x: 0, y: 0, z: 0 },
     PLAYER_2: { x: 0, y: 0, z: 0 },
@@ -267,9 +278,10 @@
     renderer.setSize(width, height);
     if (root.devicePixelRatio) renderer.setPixelRatio(Math.min(root.devicePixelRatio, 2));
 
-    // Graphic/Background.js 모듈을 사용해 배경 색상, 조명, 그리드 구성 + Effect/DoubleDamageEffect.js 바닥 이펙트 초기화
+    // Graphic/Background.js 모듈을 사용해 배경 색상, 조명, 그리드 구성 + Effect 이펙트 초기화
     const bgRefs = root.BackgroundGraphic?.setupBackground(THREE, scene);
     root.DoubleDamageEffect?.initFloorEffect?.(THREE, bgRefs);
+    root.HitSparkEffect?.init?.(THREE, scene);
 
     // Graphic/Arm.js, Graphic/Body.js, Graphic/Head.js 및 Graphic/Sword.js 모듈을 사용해 양팔, 몸통, 머리(구), 검 메쉬 구성
     const createSwordMesh = (playerId, color, xPos, facingYRad) => {
@@ -348,6 +360,7 @@
     } else {
       updatePlayerFloatPositions();
     }
+    root.HitSparkEffect?.update?.();
     const width = root.innerWidth || 1280;
     const height = root.innerHeight || 720;
     const halfWidth = Math.max(1, Math.floor(width / 2));
@@ -400,7 +413,18 @@
       root.cancelAnimationFrame(animId);
     }
     animId = null;
+    cameraFovs.PLAYER_1 = BASE_CAMERA_FOV;
+    cameraFovs.PLAYER_2 = BASE_CAMERA_FOV;
+    if (cameraP1) {
+      cameraP1.fov = BASE_CAMERA_FOV;
+      cameraP1.updateProjectionMatrix?.();
+    }
+    if (cameraP2) {
+      cameraP2.fov = BASE_CAMERA_FOV;
+      cameraP2.updateProjectionMatrix?.();
+    }
     root.DoubleDamageEffect?.reset?.();
+    root.HitSparkEffect?.reset?.();
     root.StartSetAnimation?.reset?.();
     root.EndSetAnimation?.reset?.();
     if ($('ingame-view')) $('ingame-view').hidden = true;
@@ -603,8 +627,9 @@
         playerArmExtensions.set(playerId, currentExtension);
 
         const armRadius = Math.max(0.1, baseArmRadius + currentExtension);
-        let dx = (bladeDir.x - baseDir.x) * armRadius * armMultiplier;
-        let dy = (bladeDir.y - baseDir.y) * armRadius * armMultiplier;
+        const accelOff = data.accelAimOffset || { x: 0, y: 0 };
+        let dx = (bladeDir.x - baseDir.x) * armRadius * armMultiplier + (Number(accelOff.x) || 0);
+        let dy = (bladeDir.y - baseDir.y) * armRadius * armMultiplier + (Number(accelOff.y) || 0);
 
         // 기절(STUN) 시 손잡이(손목) 위치도 중앙 진입금지 원 바깥에서 검끝과 동일한 방사형 바깥 각도(stunOutwardAngle)로 정렬
         if (isPureStun) {
@@ -660,6 +685,12 @@
       headGroup?.userData?.setEyeExpression?.(isHit ? 'HIT' : 'NORMAL');
       let hitCamFactor = 0;
       if (isHit && data.hitImpact) {
+        const hitTs = Number(data.hitImpact.timestamp) || 0;
+        if (hitTs > 0 && lastHitTimestamps[playerId] !== hitTs) {
+          lastHitTimestamps[playerId] = hitTs;
+          const fallbackPt = data.headCollider?.center || { x: 0, y: 1.4, z: 0 };
+          root.HitSparkEffect?.spawn?.(data.hitImpact.worldPoint || fallbackPt, data.hitImpact.worldDir);
+        }
         const totalDur = Math.max(0.05, Number(data.hitImpact.totalDuration) || 1.0);
         const remaining = Math.max(0, Number(data.stateDuration) || 0);
         // 피격 유지시간(0 -> totalDur)에 정확히 동기화된 진행률 p (0.0 ~ 1.0)
@@ -745,6 +776,24 @@
         }
       }
 
+      // 5) 공격(ATTACK) 판정 시 본인 카메라 시야각(FOV)을 순간적으로 좁혔다가 복귀시켜 타격감 강조
+      const cam = playerId === 'PLAYER_1' ? cameraP1 : (playerId === 'PLAYER_2' ? cameraP2 : null);
+      if (cam && !root.StartSetAnimation?.isActive?.() && !root.EndSetAnimation?.isActive?.()) {
+        const isAttackFov = data.state === 'ATTACK' && Number(data.stateDuration) > 0;
+        const targetFov = isAttackFov ? ATTACK_CAMERA_FOV : BASE_CAMERA_FOV;
+        const prevFov = Number(cameraFovs[playerId]) || BASE_CAMERA_FOV;
+        const rate = targetFov < prevFov ? 0.42 : 0.16; // 좁아질 때는 빠르게, 복귀할 때는 부드럽게
+        let nextFov = prevFov + (targetFov - prevFov) * rate;
+        if (Math.abs(targetFov - nextFov) < 0.05) {
+          nextFov = targetFov;
+        }
+        cameraFovs[playerId] = nextFov;
+        if (Math.abs((Number(cam.fov) || BASE_CAMERA_FOV) - nextFov) > 0.01) {
+          cam.fov = nextFov;
+          cam.updateProjectionMatrix?.();
+        }
+      }
+
       applyPlayerDistanceLayout(currentPlayerDistance);
     } else if (mesh.quaternion?.set) {
       mesh.quaternion.set(q.x, q.y, q.z, q.w).normalize();
@@ -809,6 +858,13 @@
 
     // 2-1) 데미지 2배 카운트다운 및 바닥/화면 오오라 이펙트 갱신
     root.DoubleDamageEffect?.update?.(setInfo);
+
+    // 2-2) 방어 성공 / 패리 시 검 충돌 지점 불똥 파티클 이펙트 발생
+    const clash = setInfo.lastClashEffect;
+    if (clash && clash.timestamp && clash.timestamp !== lastClashTimestamp) {
+      lastClashTimestamp = clash.timestamp;
+      root.HitSparkEffect?.spawn?.(clash.worldPoint, clash.worldDir);
+    }
 
     // 3) 세트 시작 준비(영점 정렬) 안내 오버레이 표시
     const isReadyPhase = setInfo.phase === 'READY';

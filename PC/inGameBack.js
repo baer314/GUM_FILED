@@ -427,6 +427,7 @@
     isDoubleDamage: false,
     damageMultiplier: 1,
     countdownRemaining: 0,
+    lastClashEffect: null,
   };
 
   function resetSetState({ nextSet = false } = {}) {
@@ -457,6 +458,7 @@
     setState.isDoubleDamage = false;
     setState.damageMultiplier = 1;
     setState.countdownRemaining = 0;
+    setState.lastClashEffect = null;
     for (const player of Object.values(playerData)) {
       player.state = PLAYER_STATE.IDLE;
       player.stateDuration = 0;
@@ -465,6 +467,9 @@
       player.attackDirectionLocked = false;
       player.attackCooldown = 0;
       player.attackTriggerStreak = 0;
+      player.attackBoost = null;
+      player.accelAimVel = { x: 0, y: 0 };
+      player.accelAimOffset = { x: 0, y: 0 };
       player.hitImpact = null;
     }
     return {
@@ -494,10 +499,87 @@
     return setState.stepDistance;
   }
 
-  // 센서 노이즈 스파이크 방지용 스무딩 및 공격 중 회전 감쇠 파라미터 (개발자 패널에서 실시간 조절 가능)
+  // 센서 노이즈 스파이크 방지용 스무딩, 공격 중 회전 감쇠, 공격 추가 이동 및 선형가속도 보조 조준 파라미터
   let sensorTiltSmoothing = 0.65;          // 일반 상태 쿼터니언 보간 계수 (0.05~1.0, 1.0이면 보간 없음)
   let attackRotationDamping = 0.18;        // 공격(ATTACK) 중 회전 감쇠 보간 계수 (0.05~1.0, 1.0이면 감쇠 없음)
+  let attackBoostAngleDeg = 32;            // 공격 판정 시 실제 움직임보다 추가로 더 나아갔다가 복귀하는 최대 각도 (도, 0~90)
+  let accelAimGain = 0.45;                 // 선형가속도 기반 팔/검 보조 조준 감도 (0~3.0, 0이면 비활성화)
+  const ACCEL_AIM_DEADZONE = 0.8;          // 미세 손떨림 무시용 선형가속도 데드존 (m/s^2)
+  const ACCEL_AIM_MAX_OFFSET = 0.55;       // 보조 조준으로 이동할 수 있는 최대 손목 오프셋 반경
   const ATTACK_TRIGGER_FRAMES = 2;         // 단발성 1프레임 스파이크 무시를 위한 연속 기준 초과 프레임 수
+
+  function setAccelAimGain(value) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num >= 0 && num <= 3.0) {
+      accelAimGain = num;
+      if (accelAimGain <= 0) {
+        for (const player of Object.values(playerData)) {
+          player.accelAimVel = { x: 0, y: 0 };
+          player.accelAimOffset = { x: 0, y: 0 };
+        }
+      }
+    }
+    return accelAimGain;
+  }
+
+  function getAccelAimGain() {
+    return accelAimGain;
+  }
+
+  // 선형가속도(acceleration)를 영점 보정된 기준 좌표계로 회전시킨 뒤, 스프링-댐퍼 필터로 드리프트 없는 보조 조준 오프셋 갱신
+  function updateAccelAimOffset(player, dt = 1 / TICK_RATE) {
+    if (!player) return;
+    if (!player.accelAimVel) player.accelAimVel = { x: 0, y: 0 };
+    if (!player.accelAimOffset) player.accelAimOffset = { x: 0, y: 0 };
+
+    if (accelAimGain <= 0 || dt <= 0) {
+      player.accelAimVel.x = 0;
+      player.accelAimVel.y = 0;
+      player.accelAimOffset.x = 0;
+      player.accelAimOffset.y = 0;
+      return;
+    }
+
+    const acc = player.acceleration || { x: 0, y: 0, z: 0 };
+    const q = normalizeQuaternion(player.liveTilt || player.tilt || { x: 0, y: 0, z: 0, w: 1 });
+    // 폰 로컬 가속도를 영점 기준 좌표계(x: 좌우, y: 앞뒤, z: 상하)로 변환
+    const calAcc = rotateVec3ByQuat(
+      { x: Number(acc.x) || 0, y: Number(acc.y) || 0, z: Number(acc.z) || 0 },
+      q
+    );
+
+    const ax = Math.abs(calAcc.x) >= ACCEL_AIM_DEADZONE ? calAcc.x : 0;
+    const ay = Math.abs(calAcc.z) >= ACCEL_AIM_DEADZONE ? calAcc.z : 0;
+
+    // 속도 감쇠 적분 + 위치 스프링 복귀 (팔 이동 시 즉각 보조하고, 멈추면 드리프트 없이 자연 복귀)
+    player.accelAimVel.x = player.accelAimVel.x * 0.84 + ax * dt * accelAimGain * 2.4;
+    player.accelAimVel.y = player.accelAimVel.y * 0.84 + ay * dt * accelAimGain * 2.4;
+
+    let ox = player.accelAimOffset.x * 0.90 + player.accelAimVel.x * dt;
+    let oy = player.accelAimOffset.y * 0.90 + player.accelAimVel.y * dt;
+
+    const dist = Math.hypot(ox, oy);
+    if (dist > ACCEL_AIM_MAX_OFFSET) {
+      const s = ACCEL_AIM_MAX_OFFSET / dist;
+      ox *= s;
+      oy *= s;
+    }
+
+    player.accelAimOffset.x = Math.abs(ox) < 1e-4 ? 0 : Number(ox.toFixed(4));
+    player.accelAimOffset.y = Math.abs(oy) < 1e-4 ? 0 : Number(oy.toFixed(4));
+  }
+
+  function setAttackBoostAngleDeg(value) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num >= 0 && num <= 90) {
+      attackBoostAngleDeg = num;
+    }
+    return attackBoostAngleDeg;
+  }
+
+  function getAttackBoostAngleDeg() {
+    return attackBoostAngleDeg;
+  }
 
   function setSensorTiltSmoothing(value) {
     const num = Number(value);
@@ -597,11 +679,12 @@
 
   function createInitialPlayerData() {
     return {
-      tilt: { x: 0, y: 0, z: 0, w: 1 },            // 기울기 (쿼터니언 xyzw)
+      tilt: { x: 0, y: 0, z: 0, w: 1 },            // 최종 적용 기울기 (공격 시 추가 이동 보정 포함, 쿼터니언 xyzw)
+      liveTilt: { x: 0, y: 0, z: 0, w: 1 },        // 실제 센서 기반 스무딩 기울기 (추가 이동 보정 전)
       prevTilt: { x: 0, y: 0, z: 0, w: 1 },        // 직전 틱 기울기 (각속도 계산용 쿼터니언 xyzw)
       angularVelocity: { x: 0, y: 0, z: 0 },       // 플레이어 저장 쿼터니언 기반 검 각속도 (xyz, rad/s)
       acceleration: { x: 0, y: 0, z: 0 },          // 가속도 (xyz)
-      button: 0,                                   // 버튼 입력 (0: 없음, 1: 방어, 2: 강타)
+      button: 0,                                   // 버튼 입력 (0: 없음, 1: 볼륨다운/방어, 2: 볼륨업/검 정렬)
       state: PLAYER_STATE.IDLE,                    // 현재 상태 (기본값: 준비상태)
       stateDuration: 0,                            // 상태 유지시간 (초 단위, 0 이하면 기본상태로 변경)
       armSwingMultiplier,                          // 기울기 값에 따라 팔이 움직이는 배수
@@ -614,6 +697,9 @@
       attackDirectionLocked: false,                // 현재 공격의 방향이 고정되었는지 여부
       attackCooldown: 0,                           // 공격 종료 후 회수 반동 오인식 방지용 쿨다운 (초)
       attackTriggerStreak: 0,                      // 각속도 기준치 연속 초과 프레임 카운터 (1프레임 스파이크 필터링)
+      attackBoost: null,                           // 공격 시 실제 움직임보다 더 나아갔다 원위치로 복귀하는 회전 보정 { axis, totalDuration }
+      accelAimVel: { x: 0, y: 0 },                 // 선형가속도 보조 조준 내부 속도
+      accelAimOffset: { x: 0, y: 0 },              // 선형가속도 기반 팔/검 보조 조준 오프셋 (armPivot 로컬 xy)
       hitImpact: null,                             // 피격 시 검이 맞은 방향 및 진동 정보
       prevSwordTipWorld: null,                     // 직전 틱 검끝 월드 좌표 (타격 스윙 방향 계산용)
       swordCollider: null,                         // 공격/방어 판정 시에만 활성화되는 검 선분 콜라이더
@@ -707,21 +793,20 @@
         if (payload.button !== undefined) {
           playerData[playerId].button = payload.button;
         }
-        // 버튼 2번이 눌리면 현재 센서 쿼터니언의 역원을 영점조절용 변수(zeroCalibration)에 저장
-        // 또한 세트 시작 준비(READY) 단계에서 볼륨 업 키(button === 1)를 누르면 검 영점 정렬과 동시에 준비 완료 처리
+        // 안드로이드 컨트롤러 규격(Packet.kt): button === 2(볼륨 업 키) = 검 정렬(영점), button === 1(볼륨 아래 키) = 방어
+        // 세트 시작 준비(READY) 단계에서 볼륨 업 키(button === 2)를 누르면 검 영점 정렬과 동시에 준비 완료 처리
         let calibratedNow = false;
         if (payload.button === 2) {
           zeroCalibration[playerId] = invertQuaternion(payload.rotation_vector);
           calibratedNow = true;
-        } else if (setState.phase === 'READY' && payload.button === 1 && !setState.ready[playerId]) {
-          zeroCalibration[playerId] = invertQuaternion(payload.rotation_vector);
-          setState.ready[playerId] = true;
-          calibratedNow = true;
+          if (setState.phase === 'READY' && !setState.ready[playerId]) {
+            setState.ready[playerId] = true;
+          }
         }
-        // 직전 플레이어 정보에 저장된 쿼터니언(tilt) 백업
-        const prevTilt = playerData[playerId].tilt
-          ? { ...playerData[playerId].tilt }
-          : { x: 0, y: 0, z: 0, w: 1 };
+        // 직전 플레이어 정보에 저장된 실제 센서 쿼터니언(liveTilt) 백업
+        const prevLiveTilt = playerData[playerId].liveTilt
+          ? { ...playerData[playerId].liveTilt }
+          : (playerData[playerId].tilt ? { ...playerData[playerId].tilt } : { x: 0, y: 0, z: 0, w: 1 });
         // 영점조절용 변수를 센서값에 곱해 목표 쿼터니언 산출
         const targetTilt = multiplyQuaternions(
           zeroCalibration[playerId],
@@ -729,24 +814,30 @@
         );
         // 방법 3(센서 스파이크 저역통과 필터) & 방법 4(공격 중 급격한 손목 비틀기 회전 감쇠) 적용
         if (calibratedNow) {
+          playerData[playerId].liveTilt = targetTilt;
           playerData[playerId].tilt = targetTilt;
           playerData[playerId].angularVelocity = { x: 0, y: 0, z: 0 };
           playerData[playerId].attackTriggerStreak = 0;
+          playerData[playerId].attackBoost = null;
+          playerData[playerId].accelAimVel = { x: 0, y: 0 };
+          playerData[playerId].accelAimOffset = { x: 0, y: 0 };
         } else {
           const smoothingFactor = playerData[playerId].state === PLAYER_STATE.ATTACK
             ? attackRotationDamping
             : sensorTiltSmoothing;
-          const smoothed = slerpQuaternions(prevTilt, targetTilt, smoothingFactor);
-          playerData[playerId].tilt = {
+          const smoothed = slerpQuaternions(prevLiveTilt, targetTilt, smoothingFactor);
+          const nextLive = {
             x: Number(smoothed.x.toFixed(4)) || 0,
             y: Number(smoothed.y.toFixed(4)) || 0,
             z: Number(smoothed.z.toFixed(4)) || 0,
             w: Number(smoothed.w.toFixed(4)) || 0,
           };
-          // 플레이어 정보에 저장되는 쿼터니언(tilt)의 변화량으로부터 각속도(xyz) 계산
-          playerData[playerId].angularVelocity = computeAngularVelocity(prevTilt, playerData[playerId].tilt);
+          playerData[playerId].liveTilt = nextLive;
+          playerData[playerId].tilt = { ...nextLive };
+          // 실제 센서 기반 쿼터니언(liveTilt)의 변화량으로부터 각속도(xyz) 계산
+          playerData[playerId].angularVelocity = computeAngularVelocity(prevLiveTilt, nextLive);
         }
-        playerData[playerId].prevTilt = { ...playerData[playerId].tilt };
+        playerData[playerId].prevTilt = { ...playerData[playerId].liveTilt };
         playerData[playerId].armSwingMultiplier = armSwingMultiplier;
         playerData[playerId].attackArmExtension = attackArmExtension;
         playerData[playerId].defenseSwordOffset = defenseSwordOffset;
@@ -760,6 +851,57 @@
     return sensorData;
   }
 
+  // 공격 발동 순간의 각속도 방향을 기준으로, 실제 움직임보다 검이 더 나아갔다가 원위치(liveTilt)로 돌아오는 보정 정보 생성
+  function createAttackBoost(player, durationSec) {
+    const maxDeg = Math.max(0, Math.min(90, Number(attackBoostAngleDeg) || 0));
+    if (maxDeg <= 0.1) return null;
+    const av = player?.angularVelocity || { x: 0, y: 0, z: 0 };
+    const mag = Math.hypot(av.x || 0, av.y || 0, av.z || 0);
+    if (mag < 1e-4) return null;
+    return {
+      axis: { x: av.x / mag, y: av.y / mag, z: av.z / mag },
+      totalDuration: Math.max(0.05, Number(durationSec) || JUDGMENT_DURATION.ATTACK || 0.5),
+    };
+  }
+
+  // 공격 유지시간 진행률(p: 0->1)에 따라 0 -> 최대 추가 각도 -> 0(원위치)으로 부드럽게 왕복하는 추가 회전 적용
+  function applyAttackBoostToTilt(player) {
+    if (!player) return;
+    const baseTilt = normalizeQuaternion(player.liveTilt || player.tilt || { x: 0, y: 0, z: 0, w: 1 });
+    if (player.state !== PLAYER_STATE.ATTACK || !player.attackBoost || attackBoostAngleDeg <= 0) {
+      player.tilt = {
+        x: Number(baseTilt.x.toFixed(4)) || 0,
+        y: Number(baseTilt.y.toFixed(4)) || 0,
+        z: Number(baseTilt.z.toFixed(4)) || 0,
+        w: Number(baseTilt.w.toFixed(4)) || 0,
+      };
+      return;
+    }
+
+    const totalDur = Math.max(0.05, Number(player.attackBoost.totalDuration) || 0.5);
+    const p = Math.min(1, Math.max(0, (totalDur - (Number(player.stateDuration) || 0)) / totalDur));
+    // 전반부(0 ~ 0.42): 빠르게 추가 이동(Ease-Out) / 후반부(0.42 ~ 1.0): 부드럽게 원래 위치(0)로 복귀
+    const peakPoint = 0.42;
+    let factor;
+    if (p < peakPoint) {
+      const u = p / peakPoint;
+      factor = 1 - Math.pow(1 - u, 2.5);
+    } else {
+      const u = (p - peakPoint) / (1 - peakPoint);
+      factor = Math.pow(1 - u, 1.8);
+    }
+
+    const boostRad = ((attackBoostAngleDeg * Math.PI) / 180) * factor;
+    const half = boostRad / 2;
+    const s = Math.sin(half);
+    const c = Math.cos(half);
+    const axis = player.attackBoost.axis;
+    const boostDeltaQ = { x: axis.x * s, y: axis.y * s, z: axis.z * s, w: c };
+    // computeAngularVelocity는 로컬 우곱(inv(prev) * curr) 기준이므로 우곱으로 동일 회전 방향 확장
+    const boosted = multiplyQuaternions(baseTilt, boostDeltaQ);
+    player.tilt = boosted;
+  }
+
   // 플레이어에게 특정 상태와 상태 유지시간(초) 부여
   // 규칙: 현재 유지시간(stateDuration > 0)이 남아있을 때는 새 상태의 위계가 현재 상태와 같거나 상위(>=)일 때만 덮어씀
   function setPlayerState(player, newState, durationSec = STATE_DURATION[newState] || 0, options = {}) {
@@ -770,16 +912,22 @@
       return false;
     }
 
+    const prevState = player.state;
     player.state = newState;
     if (!inheritDuration) {
       player.stateDuration = Math.max(0, Number(durationSec) || 0);
+    }
+    if (newState === PLAYER_STATE.ATTACK && prevState !== PLAYER_STATE.ATTACK) {
+      player.attackBoost = createAttackBoost(player, player.stateDuration);
+    } else if (newState !== PLAYER_STATE.ATTACK) {
+      player.attackBoost = null;
     }
     return true;
   }
 
   // 플레이어 정보에 저장된 쿼터니언 기반 각속도(angularVelocity)와 버튼으로부터 현재 동작(준비상태/기본공격/방어) 판정
   function detectInputAction(player) {
-    // 방어키(button === 1)를 누르고 있으면 방어 상태 우선 유지
+    // 방어키(볼륨 아래 키, button === 1)를 누르고 있으면 방어 상태 우선 유지
     if (player.button === 1) {
       player.attackTriggerStreak = 0;
       return PLAYER_STATE.DEFENSE;
@@ -995,8 +1143,9 @@
       ? Number(player.armSwingMultiplier)
       : armSwingMultiplier;
 
-    let dx = (bladeDir.x - baseDir.x) * armRadius * mult;
-    let dy = (bladeDir.y - baseDir.y) * armRadius * mult;
+    const accelOff = player.accelAimOffset || { x: 0, y: 0 };
+    let dx = (bladeDir.x - baseDir.x) * armRadius * mult + (Number(accelOff.x) || 0);
+    let dy = (bladeDir.y - baseDir.y) * armRadius * mult + (Number(accelOff.y) || 0);
 
     if (isPureStun) {
       const minWristR = Math.min(armRadius * 0.9, Math.max(0, circleRadius));
@@ -1216,6 +1365,72 @@
     return false;
   }
 
+  // 두 검 선분(swordA, swordB) 사이의 최단 접근 지점(3D 월드 충돌 좌표) 계산
+  function computeSwordClashPoint(swordA, swordB) {
+    if (!swordA?.start || !swordA?.tip || !swordB?.start || !swordB?.tip) {
+      return { x: 0, y: 1.3, z: 0 };
+    }
+    const p1 = swordA.start;
+    const q1 = swordA.tip;
+    const p2 = swordB.start;
+    const q2 = swordB.tip;
+
+    const d1 = { x: q1.x - p1.x, y: q1.y - p1.y, z: q1.z - p1.z };
+    const d2 = { x: q2.x - p2.x, y: q2.y - p2.y, z: q2.z - p2.z };
+    const r = { x: p1.x - p2.x, y: p1.y - p2.y, z: p1.z - p2.z };
+    const a = d1.x * d1.x + d1.y * d1.y + d1.z * d1.z;
+    const e = d2.x * d2.x + d2.y * d2.y + d2.z * d2.z;
+    const f = d2.x * r.x + d2.y * r.y + d2.z * r.z;
+
+    let s = 0;
+    let t = 0;
+    if (a <= 1e-6 && e <= 1e-6) {
+      return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2, z: (p1.z + p2.z) / 2 };
+    }
+    if (a <= 1e-6) {
+      t = Math.min(1, Math.max(0, f / e));
+    } else {
+      const c = d1.x * r.x + d1.y * r.y + d1.z * r.z;
+      if (e <= 1e-6) {
+        s = Math.min(1, Math.max(0, -c / a));
+      } else {
+        const b = d1.x * d2.x + d1.y * d2.y + d1.z * d2.z;
+        const denom = a * e - b * b;
+        s = denom !== 0 ? Math.min(1, Math.max(0, (b * f - c * e) / denom)) : 0;
+        t = (b * s + f) / e;
+        if (t < 0) {
+          t = 0;
+          s = Math.min(1, Math.max(0, -c / a));
+        } else if (t > 1) {
+          t = 1;
+          s = Math.min(1, Math.max(0, (b - c) / a));
+        }
+      }
+    }
+
+    const c1 = { x: p1.x + d1.x * s, y: p1.y + d1.y * s, z: p1.z + d1.z * s };
+    const c2 = { x: p2.x + d2.x * t, y: p2.y + d2.y * t, z: p2.z + d2.z * t };
+    return {
+      x: (c1.x + c2.x) / 2,
+      y: (c1.y + c2.y) / 2,
+      z: (c1.z + c2.z) / 2,
+    };
+  }
+
+  function recordSwordClashEffect(attackerSword, defenderSword) {
+    const worldPoint = computeSwordClashPoint(attackerSword, defenderSword);
+    const vel = attackerSword?.tipVelocityWorld || { x: 0, y: 1, z: 0 };
+    const vLen = Math.hypot(vel.x || 0, vel.y || 0, vel.z || 0);
+    const worldDir = vLen > 1e-4
+      ? { x: vel.x / vLen, y: vel.y / vLen, z: vel.z / vLen }
+      : { x: 0, y: 1, z: 0 };
+    setState.lastClashEffect = {
+      worldPoint,
+      worldDir,
+      timestamp: Date.now() + Math.random(),
+    };
+  }
+
   // 두 2D 정면 선분(seg1, seg2)이 이루는 예각(0~90도) 계산 헬퍼
   function angleBetweenSegmentsDeg(seg1, seg2) {
     if (!seg1 || !seg2) return null;
@@ -1393,6 +1608,7 @@
     const localDir = worldDirToArmPivotLocal(victimId, worldDir);
 
     return {
+      worldPoint: { x: hitPt.x, y: hitPt.y, z: hitPt.z },
       worldDir,
       localDir,
       totalDuration: JUDGMENT_DURATION.ATTACK_SUCCESS_HIT || 1.0,
@@ -1477,6 +1693,7 @@
       if (p1SwordTouchedP2 || p2SwordTouchedP1) {
         const parryMatched = isDefenseAngleMatched(p1, p2) || isDefenseAngleMatched(p2, p1);
         if (parryMatched) {
+          recordSwordClashEffect(p1.swordCollider, p2.swordCollider);
           setPlayerState(
             p1,
             p1.button === 1 ? PLAYER_STATE.STUN_DEFENSE : PLAYER_STATE.STUN,
@@ -1498,6 +1715,7 @@
     const p2BlockedByAngle = s1 === PLAYER_STATE.ATTACK && isDefendingState(s2) && isDefenseAngleMatched(p1, p2);
     if (p2BlockedByAngle) {
       if (p1SwordTouchedP2) {
+        recordSwordClashEffect(p1.swordCollider, p2.swordCollider);
         setPlayerState(
           p1,
           p1.button === 1 ? PLAYER_STATE.STUN_DEFENSE : PLAYER_STATE.STUN,
@@ -1513,6 +1731,7 @@
     const p1BlockedByAngle = s2 === PLAYER_STATE.ATTACK && isDefendingState(s1) && isDefenseAngleMatched(p2, p1);
     if (p1BlockedByAngle) {
       if (p2SwordTouchedP1) {
+        recordSwordClashEffect(p2.swordCollider, p1.swordCollider);
         setPlayerState(
           p2,
           p2.button === 1 ? PLAYER_STATE.STUN_DEFENSE : PLAYER_STATE.STUN,
@@ -1564,7 +1783,7 @@
       return;
     }
 
-    // 세트 준비(READY) 단계: 참여 중인 플레이어가 모두 볼륨 업 키(button === 1)를 눌러 정렬을 완료하면 READY -> FIGHT! 시퀀스로 전환
+    // 세트 준비(READY) 단계: 참여 중인 플레이어가 모두 볼륨 업 키(button === 2)를 눌러 정렬을 완료하면 READY -> FIGHT! 시퀀스로 전환
     if (setState.phase === 'READY') {
       const connectedIds = currentPlayers
         .map((p) => p.id)
@@ -1683,6 +1902,12 @@
           setPlayerState(player, inputAction, actionDuration);
         }
       }
+
+      // 3-1) 공격(ATTACK) 중 실제 움직임보다 검이 더 나아갔다가 원위치(liveTilt)로 돌아오는 보정 적용
+      applyAttackBoostToTilt(player);
+
+      // 3-2) 선형가속도 기반 팔/검 보조 조준 오프셋 갱신
+      updateAccelAimOffset(player, dt);
     }
 
     // 4) 두 플레이어의 동작을 상태표 및 위계에 따라 판정하여 피격/기절 부여
@@ -1796,6 +2021,10 @@
     getSensorTiltSmoothing,
     setAttackRotationDamping,
     getAttackRotationDamping,
+    setAttackBoostAngleDeg,
+    getAttackBoostAngleDeg,
+    setAccelAimGain,
+    getAccelAimGain,
     computeFrontalSwordAngleDeg,
     setStunCircleRadius,
     getStunCircleRadius,

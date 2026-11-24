@@ -28,7 +28,9 @@
 .split-pane-label{position:absolute;top:16px;padding:6px 14px;border-radius:999px;font-size:.82rem;font-weight:700;letter-spacing:.1em;background:rgba(14,23,21,.72);border:1px solid rgba(255,255,255,.16);backdrop-filter:blur(6px)}
 .split-left-label{left:20px;color:#4fd1a5;border-color:rgba(79,209,165,.4)}
 .split-right-label{left:calc(50% + 20px);color:#f28b66;border-color:rgba(242,139,102,.4)}
-.split-danger-glow{position:absolute;bottom:0;width:50%;height:34%;pointer-events:none;background:linear-gradient(to top,rgba(220,38,38,.78),rgba(220,38,38,.28) 48%,transparent);animation:dangerPulse 0.9s ease-in-out infinite}
+.split-danger-glow{position:absolute;bottom:0;width:50%;height:34%;display:flex;align-items:flex-end;justify-content:center;padding-bottom:28px;pointer-events:none;background:linear-gradient(to top,rgba(220,38,38,.78),rgba(220,38,38,.28) 48%,transparent);animation:dangerPulse 0.9s ease-in-out infinite}
+.danger-exclamation{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:900 2.6rem/1 system-ui,sans-serif;color:#fff5f5;background:rgba(185,28,28,.88);border:3px solid rgba(254,202,202,.92);box-shadow:0 0 24px rgba(239,68,68,.95),0 0 48px rgba(220,38,38,.65),0 6px 18px rgba(0,0,0,.6);text-shadow:0 0 12px rgba(255,255,255,.75);animation:dangerExclBounce 0.9s ease-in-out infinite}
+@keyframes dangerExclBounce{0%,100%{transform:scale(.94)}50%{transform:scale(1.08)}}
 .split-danger-left{left:0}
 .split-danger-right{left:50%}
 @keyframes dangerPulse{0%,100%{opacity:.62}50%{opacity:1}}
