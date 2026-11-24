@@ -25,6 +25,11 @@ object Packet {
     /** WebRTC 시그널링 상대 (서버가 정한 PC의 ID) */
     const val HOST_ID = "PC_HOST"
 
+    /** SENSOR.button 값 (PC/inGameBack.js 기준) */
+    const val BUTTON_NONE = 0
+    const val BUTTON_DEFEND = 1
+    const val BUTTON_ALIGN = 2
+
     // ---- 앱 → 서버 ----
 
     /** 대기방 입장 요청 */
@@ -56,7 +61,8 @@ object Packet {
     /**
      * 센서 및 조작 데이터.
      * seq: 0부터 1씩 증가. PC는 이전 값 이하인 패킷을 버리고, 건너뛴 번호로 손실을 계산한다.
-     * button: 0 입력 없음, 1 볼륨 상(방어), 2 볼륨 하(강타 충전)
+     * button: BUTTON_NONE(0) 입력 없음, BUTTON_DEFEND(1) 방어 = 볼륨 하, BUTTON_ALIGN(2) 검 정렬(영점) = 볼륨 상
+     * PC(inGameBack.js)는 2를 받는 동안 그때의 자세를 정면으로 다시 잡는다.
      */
     fun sensor(senderId: String, seq: Long, timestamp: Long, s: SensorSnapshot, button: Int): String {
         val q = s.rotation // [w, x, y, z]
