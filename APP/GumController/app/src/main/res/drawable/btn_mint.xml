@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 두툼한 민트 버튼: 진한 색 그림자 위에 본 색. 누르면 내려앉는다 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false">
+        <layer-list>
+            <item android:top="6dp"><shape><corners android:radius="16dp" /><solid android:color="#803FB596" /></shape></item>
+        </layer-list>
+    </item>
+    <item android:state_pressed="true">
+        <layer-list>
+            <item android:top="6dp"><shape><corners android:radius="16dp" /><solid android:color="@color/gum_p1_deep" /></shape></item>
+            <item android:top="5dp" android:bottom="1dp"><shape><corners android:radius="16dp" /><solid android:color="@color/gum_p1" /></shape></item>
+        </layer-list>
+    </item>
+    <item>
+        <layer-list>
+            <item android:top="6dp"><shape><corners android:radius="16dp" /><solid android:color="@color/gum_p1_deep" /></shape></item>
+            <item android:bottom="6dp"><shape><corners android:radius="16dp" /><solid android:color="@color/gum_p1" /></shape></item>
+        </layer-list>
+    </item>
+</selector>

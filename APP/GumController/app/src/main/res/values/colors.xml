@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 인게임(PC) 화면에 맞춘 색. 시안: APP/design/theme-mockup-v2.1.png -->
+<resources>
+    <!-- 하늘 (위 → 아래) -->
+    <color name="gum_sky_top">#2A2B44</color>
+    <color name="gum_sky_mid">#4A3658</color>
+    <color name="gum_sky_low">#6B4E6E</color>
+    <!-- 2P 화면은 조금 더 붉은 보라 -->
+    <color name="gum_sky_top_p2">#3A2E4E</color>
+    <color name="gum_sky_mid_p2">#5A3862</color>
+    <color name="gum_sky_low_p2">#7A5274</color>
+
+    <!-- 갑판 -->
+    <color name="gum_deck">#7E9FB8</color>
+    <color name="gum_deck_dark">#5B7790</color>
+
+    <!-- 노란 패널 · 주 버튼 · 검 정렬 -->
+    <color name="gum_gold">#F0C04A</color>
+    <color name="gum_gold_dark">#C9922C</color>
+    <color name="gum_on_gold">#3A2A12</color>
+
+    <!-- 플레이어 색 -->
+    <color name="gum_p1">#7EE3C6</color>
+    <color name="gum_p1_deep">#3FB596</color>
+    <color name="gum_on_p1">#103A30</color>
+    <color name="gum_p2">#F2A27E</color>
+    <color name="gum_p2_label">#F0A060</color>
+
+    <!-- 라벨 · 카드 · 글자 -->
+    <color name="gum_card">#B81B2321</color>
+    <color name="gum_card_line">#1FFFFFFF</color>
+    <color name="gum_text">#F6F2EC</color>
+    <color name="gum_text_dim">#C2B8CC</color>
+    <color name="gum_hint">#8F8AA3</color>
+    <color name="gum_warning">#FF9A8A</color>
+</resources>
