@@ -8,12 +8,12 @@
 </head>
 <body>
   <main id="lobby-view" class="lobby">
-    <header class="lobby-header">
-      <p class="eyebrow">GUM FIELD · MOBILE KUMDO</p>
-      <h1 id="title">GUM FIELD</h1>
-    </header>
+    <div class="lobby-stack">
+      <header class="lobby-header">
+        <p class="eyebrow">GUM FIELD · MOBILE KUMDO</p>
+        <h1 id="title">GUM FIELD</h1>
+      </header>
 
-    <div class="lobby-grid">
       <section class="lobby-participants">
         <div class="participants-header">
           <h2>참가자 명단</h2>
@@ -23,26 +23,27 @@
         <div id="players" class="players"></div>
       </section>
 
-      <div class="lobby-side">
-        <section class="lobby-start-box">
-          <button id="start" class="start-button" disabled>플레이 시작</button>
-        </section>
-
-        <section class="lobby-qr-box">
-          <h2>QR 접속 · PIN 번호</h2>
+      <section class="lobby-qr-box">
+        <h2>QR 접속 · PIN 번호</h2>
+        <div class="qr-pin-row">
           <div id="qr-screen" class="qr-screen" aria-label="QR 화면">
             <p class="qr-placeholder">QR 생성 대기 중</p>
           </div>
           <div class="pin-box">
             <span class="pin-label">PIN 번호</span>
             <p class="pin" id="pin">—</p>
+            <a id="controller-link" hidden target="_blank" rel="noopener">테스트 컨트롤러 열기</a>
           </div>
-          <a id="controller-link" hidden target="_blank" rel="noopener">테스트 컨트롤러 열기</a>
-        </section>
-      </div>
+        </div>
+      </section>
+
+      <section class="lobby-start-box">
+        <button id="start" class="start-button" disabled>플레이 시작</button>
+      </section>
     </div>
 
-    <details class="lobby-tools">
+    <!-- 기존 스크립트 id 참조 호환용 숨김 영역 (화면에는 표시하지 않음) -->
+    <details class="lobby-tools" hidden aria-hidden="true">
       <summary>서버 설정 및 시험 기록</summary>
       <form id="room-form">
         <label>서버 주소<input id="server-url" required></label>
