@@ -106,77 +106,117 @@
     const fmt = 0x77c4;
     for (let i = 0; i < 15; i++) {
       const bit = (fmt >> i) & 1;
-      // Copy 1: 좌상단 파인더 패턴 주변 (수직 0..5, 7, 8 -> 수평 7, 5..0)
       if (i < 6) grid[i][8] = bit;
       else if (i < 8) grid[i + 1][8] = bit;
       else if (i === 8) grid[8][7] = bit;
       else grid[8][14 - i] = bit;
-      // Copy 2: 우상단 수평 (size-1..size-8) 및 좌하단 수직 (size-7..size-1)
       if (i < 8) grid[8][size - 1 - i] = bit;
       else grid[size - 15 + i][8] = bit;
     }
     let path = '';
     for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) if (grid[r][c]) path += `M${c + 4},${r + 4}h1v1h-1z`;
-    return `<svg viewBox="0 0 ${size + 8} ${size + 8}" shape-rendering="crispEdges" role="img" aria-label="방 입장 QR 코드"><rect width="100%" height="100%" fill="#fff"/><path d="${path}" fill="#172626"/></svg>`;
+    return `<svg viewBox="0 0 ${size + 8} ${size + 8}" shape-rendering="crispEdges" role="img" aria-label="방 입장 QR 코드"><rect width="100%" height="100%" fill="#fff"/><path d="${path}" fill="#141923"/></svg>`;
+  }
+
+  function createPlayerSlot(slotId, shortLabel, playerData) {
+    const card = document.createElement('section');
+    card.className = 'player-slot';
+    card.dataset.player = slotId;
+
+    const rawState = playerData && playerData.state ? String(playerData.state).trim() : '';
+    const isJoined = Boolean(
+      playerData
+      && rawState
+      && !/대기|wait|empty|disconnect|미연결|오프라인/i.test(rawState)
+    );
+    if (isJoined) card.classList.add('is-joined');
+
+    const heading = document.createElement('h2');
+    heading.className = 'player-badge';
+    heading.textContent = shortLabel;
+
+    const status = document.createElement('p');
+    status.className = 'player-state';
+    status.textContent = rawState || '입장 대기';
+
+    card.append(heading, status);
+    return card;
   }
 
   function initTitle(defaultTitle = 'GUM FIELD') {
     if ($('title') && !$('title').textContent) $('title').textContent = defaultTitle;
+    if ($('players') && $('players').children.length === 0) {
+      renderPlayers([], 0, false);
+    }
   }
 
   function setServerUrl(value) {
-    $('server-url').value = value;
+    if ($('server-url')) $('server-url').value = value;
   }
 
   function getServerUrl() {
-    return $('server-url').value;
+    return $('server-url') ? $('server-url').value : '';
   }
 
   function renderLog(events) {
-    $('events').textContent = events.slice(-12).join('\n');
+    if ($('events')) $('events').textContent = events.slice(-12).join('\n');
   }
 
   function renderStatus(text) {
-    $('room-status').textContent = text;
+    if ($('room-status')) $('room-status').textContent = text;
   }
 
   function setCreateDisabled(disabled) {
-    $('create').disabled = disabled;
+    if ($('create')) $('create').disabled = disabled;
   }
 
   function setStartDisabled(disabled) {
-    $('start').disabled = disabled;
+    if ($('start')) $('start').disabled = disabled;
   }
 
   function resetView() {
-    $('pin').textContent = '—';
-    $('qr-data').value = '';
-    $('controller-link').hidden = true;
+    if ($('pin')) $('pin').textContent = '—';
+    if ($('qr-data')) $('qr-data').value = '';
+    if ($('controller-link')) $('controller-link').hidden = true;
     if ($('qr-screen')) $('qr-screen').innerHTML = '<p class="qr-placeholder">QR 생성 대기 중</p>';
-    if ($('participant-count')) $('participant-count').textContent = '참여인원: 0 / 2명';
-    $('start').disabled = true;
-    $('players').replaceChildren();
+    renderPlayers([], 0, false);
   }
 
   function renderRoomCreated(room, controllerHref) {
-    $('pin').textContent = room.room_pin;
-    $('qr-data').value = room.qr_data;
+    if ($('pin')) $('pin').textContent = room.room_pin;
+    if ($('qr-data')) $('qr-data').value = room.qr_data;
     if ($('qr-screen')) $('qr-screen').innerHTML = renderQrSvg(room.qr_data);
-    $('room-status').textContent = `입장 대기 · ${room.transport === 'p2p' ? '직접 연결' : '서버 중계'}`;
-    $('controller-link').href = controllerHref;
-    $('controller-link').hidden = false;
+    if ($('room-status')) $('room-status').textContent = `입장 대기 · ${room.transport === 'p2p' ? '직접 연결' : '서버 중계'}`;
+    if ($('controller-link')) {
+      $('controller-link').href = controllerHref;
+      $('controller-link').hidden = false;
+    }
   }
 
-  function renderPlayers(players, connectedCount, canStart) {
+  function renderPlayers(players = [], connectedCount = 0, canStart = false) {
     if ($('participant-count')) $('participant-count').textContent = `참여인원: ${connectedCount} / 2명`;
-    $('start').disabled = !canStart;
-    $('players').replaceChildren();
-    for (const s of players) {
-      const card = document.createElement('section'); card.dataset.player = s.id;
-      const heading = document.createElement('h2'); heading.textContent = s.id;
-      const status = document.createElement('p'); status.textContent = s.state;
-      card.append(heading, status); $('players').append(card);
+    if ($('start')) $('start').disabled = !canStart;
+
+    const container = $('players');
+    if (!container) return;
+
+    const list = Array.isArray(players) ? players : [];
+    const byId = new Map();
+    const extras = [];
+
+    for (const s of list) {
+      if (!s) continue;
+      if (s.id === 'PLAYER_1' || s.id === 'PLAYER_2') byId.set(s.id, s);
+      else extras.push(s);
     }
+
+    const p1 = byId.get('PLAYER_1') || extras.shift() || null;
+    const p2 = byId.get('PLAYER_2') || extras.shift() || null;
+
+    container.replaceChildren(
+      createPlayerSlot(p1?.id || 'PLAYER_1', 'P1', p1),
+      createPlayerSlot(p2?.id || 'PLAYER_2', 'P2', p2)
+    );
   }
 
   function downloadJson(filename, data) {
@@ -186,10 +226,10 @@
   }
 
   function bindEvents({ onCreateRoom, onStartGame, onCloseRoom, onExport }) {
-    $('room-form').onsubmit = onCreateRoom;
-    $('start').onclick = onStartGame;
-    $('close').onclick = onCloseRoom;
-    $('export').onclick = onExport;
+    if ($('room-form')) $('room-form').onsubmit = onCreateRoom;
+    if ($('start')) $('start').onclick = onStartGame;
+    if ($('close')) $('close').onclick = onCloseRoom;
+    if ($('export')) $('export').onclick = onExport;
   }
 
   root.GameFront = {
@@ -208,4 +248,3 @@
     bindEvents,
   };
 })(globalThis);
-

@@ -386,9 +386,26 @@
     }
   }
 
+  // 대기방 뒤에 실시간 3D 게임플레이 화면을 반투명 배경으로 표시
+  function showLobbyBackground() {
+    const lobbyView = $('lobby-view');
+    if (lobbyView && lobbyView.hidden) return;
+    const ingameView = $('ingame-view');
+    if (ingameView) {
+      ingameView.hidden = false;
+      ingameView.classList.add('lobby-bg-mode');
+    }
+    initThree();
+    applyPlayerDistanceLayout(currentPlayerDistance);
+    if (!animId && renderer) animate();
+  }
+
   function start(onBackToLobby) {
     if ($('lobby-view')) $('lobby-view').hidden = true;
-    if ($('ingame-view')) $('ingame-view').hidden = false;
+    if ($('ingame-view')) {
+      $('ingame-view').hidden = false;
+      $('ingame-view').classList.remove('lobby-bg-mode');
+    }
     if ($('back-to-lobby')) $('back-to-lobby').onclick = onBackToLobby;
     root.InGameDev?.init?.();
     initThree();
@@ -396,15 +413,26 @@
   }
 
   function stop() {
-    if (animId && typeof root.cancelAnimationFrame === 'function') {
-      root.cancelAnimationFrame(animId);
-    }
-    animId = null;
     root.DoubleDamageEffect?.reset?.();
     root.StartSetAnimation?.reset?.();
     root.EndSetAnimation?.reset?.();
-    if ($('ingame-view')) $('ingame-view').hidden = true;
+    currentArenaShiftX = 0;
+    cameraShakeOffsets.PLAYER_1 = { x: 0, y: 0, z: 0 };
+    cameraShakeOffsets.PLAYER_2 = { x: 0, y: 0, z: 0 };
+    cameraStunPullbacks.PLAYER_1 = 0;
+    cameraStunPullbacks.PLAYER_2 = 0;
+    for (const id of [
+      'p1-danger-glow',
+      'p2-danger-glow',
+      'p1-set-result',
+      'p2-set-result',
+      'p1-ready-overlay',
+      'p2-ready-overlay',
+    ]) {
+      if ($(id)) $(id).hidden = true;
+    }
     if ($('lobby-view')) $('lobby-view').hidden = false;
+    showLobbyBackground();
   }
 
   // 기본 자세 쿼터니언 (0, 0, 0, 1)에서 목표 쿼터니언 q까지 비율 t만큼 구면 선형 보간(Slerp)
@@ -882,6 +910,7 @@
   root.InGameFront = {
     start,
     stop,
+    showLobbyBackground,
     updatePose,
     updateGraphics,
     setPlayerDistance,
@@ -908,4 +937,12 @@
     toggleOverlay: () => root.InGameDev?.toggleOverlay?.(),
     toggleDurationPanel: (forceOpen) => root.InGameDev?.toggleDurationPanel?.(forceOpen),
   };
+
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', showLobbyBackground);
+    } else {
+      setTimeout(showLobbyBackground, 0);
+    }
+  }
 })(globalThis);
