@@ -95,7 +95,9 @@
   function setPlayerHeadOpacity(playerId, opacity) {
     const mesh = meshes.get(playerId);
     const headGroup = mesh?.userData?.headGroup;
+    const bodyGroup = mesh?.userData?.bodyGroup;
     headGroup?.userData?.setOpacity?.(opacity);
+    bodyGroup?.userData?.setOpacity?.(opacity);
   }
 
   function setSelfHeadOpacity(opacity) {
@@ -126,7 +128,9 @@
     }
     for (const mesh of meshes.values()) {
       const headGroup = mesh?.userData?.headGroup;
+      const bodyGroup = mesh?.userData?.bodyGroup;
       headGroup?.userData?.setOffsetZ?.(currentHeadOffsetZ);
+      bodyGroup?.userData?.setOffsetZ?.(currentHeadOffsetZ);
     }
     renderSplitView();
     return currentHeadOffsetZ;
@@ -226,10 +230,11 @@
     renderer.setSize(width, height);
     if (root.devicePixelRatio) renderer.setPixelRatio(Math.min(root.devicePixelRatio, 2));
 
-    // Graphic/Background.js 모듈을 사용해 배경 색상, 조명, 그리드 구성
-    root.BackgroundGraphic?.setupBackground(THREE, scene);
+    // Graphic/Background.js 모듈을 사용해 배경 색상, 조명, 그리드 구성 + Effect/DoubleDamageEffect.js 바닥 이펙트 초기화
+    const bgRefs = root.BackgroundGraphic?.setupBackground(THREE, scene);
+    root.DoubleDamageEffect?.initFloorEffect?.(THREE, bgRefs);
 
-    // Graphic/Arm.js, Graphic/Head.js 및 Graphic/Sword.js 모듈을 사용해 양팔, 머리(구), 검 메쉬 구성
+    // Graphic/Arm.js, Graphic/Body.js, Graphic/Head.js 및 Graphic/Sword.js 모듈을 사용해 양팔, 몸통, 머리(구), 검 메쉬 구성
     const createSwordMesh = (playerId, color, xPos, facingYRad) => {
       const baseGroup = new THREE.Group();
       baseGroup.position.set(xPos, 1.1, 0);
@@ -243,9 +248,13 @@
       arm.setOpacity?.(currentArmOpacity);
       const initialHeadOffsetZ = root.InGameBack?.getHeadOffsetZ?.() ?? currentHeadOffsetZ;
       currentHeadOffsetZ = Number.isFinite(Number(initialHeadOffsetZ)) ? Number(initialHeadOffsetZ) : 0;
+      const bodyGroup = root.BodyGraphic?.createBody?.(THREE, color, currentHeadOffsetZ) || null;
       const headGroup = root.HeadGraphic?.createHead?.(THREE, color, currentHeadOffsetZ) || null;
       const swordGroup = root.SwordGraphic.createSword(THREE, color, arm.baseWristOffset);
 
+      if (bodyGroup) {
+        arm.armPivot.add(bodyGroup);
+      }
       if (headGroup) {
         arm.armPivot.add(headGroup);
       }
@@ -257,6 +266,7 @@
       swordGroup.userData = {
         baseGroup,
         armPivot: arm.armPivot,
+        bodyGroup,
         headGroup,
         leftForearm: arm.leftForearm,
         rightForearm: arm.rightForearm,
@@ -337,6 +347,7 @@
       root.cancelAnimationFrame(animId);
     }
     animId = null;
+    root.DoubleDamageEffect?.reset?.();
     if ($('ingame-view')) $('ingame-view').hidden = true;
     if ($('lobby-view')) $('lobby-view').hidden = false;
   }
@@ -587,7 +598,9 @@
       }
 
       // 3) 피격(HIT) 시 고무줄을 당겼다 놓듯 피격 방향으로 빠르게 튕긴 뒤 정점에서 잠깐 멈췄다가 빠르게 원위치로 복귀
+      //    + 몸통은 피격 방향으로 살짝 기울어지고 머리는 중심에서 피격 방향으로 살짝 회전
       const headGroup = mesh.userData?.headGroup;
+      const bodyGroup = mesh.userData?.bodyGroup;
       const isHit = data.state === 'HIT' && Number(data.stateDuration) > 0;
       let hitCamFactor = 0;
       if (isHit && data.hitImpact) {
@@ -617,6 +630,23 @@
           lDir.y * hitMotion * 0.55,
           lDir.z * hitMotion * 0.55
         );
+        bodyGroup?.userData?.setShakeOffset?.(
+          lDir.x * hitMotion * 0.55,
+          lDir.y * hitMotion * 0.55,
+          lDir.z * hitMotion * 0.55
+        );
+        // 몸통은 피격 방향으로 살짝 기울임 (+Z 뒤쪽 -> +rotX, +X 오른쪽 -> -rotZ)
+        bodyGroup?.userData?.setRotationOffset?.(
+          lDir.z * hitMotion * 0.26,
+          -lDir.x * hitMotion * 0.12,
+          -lDir.x * hitMotion * 0.26
+        );
+        // 머리는 중심에서 피격 방향으로 살짝 회전 (좌우 타격 시 고개가 피격 방향으로 꺾이고, 앞뒤/상하 타격 시 고개가 젖혀짐)
+        headGroup?.userData?.setRotationOffset?.(
+          (lDir.z * 0.38 + lDir.y * 0.42) * hitMotion,
+          -lDir.x * hitMotion * 0.48,
+          -lDir.x * hitMotion * 0.22
+        );
         //카메라 흔들림 조정
         cameraShakeOffsets[playerId] = {
           x: wDir.x * hitCamFactor * 0.7,
@@ -625,6 +655,7 @@
         };
       } else {
         headGroup?.userData?.setShakeOffset?.(0, 0, 0);
+        bodyGroup?.userData?.setShakeOffset?.(0, 0, 0);
         cameraShakeOffsets[playerId] = { x: 0, y: 0, z: 0 };
       }
 
@@ -642,6 +673,19 @@
         } else {
           const step = Math.max((prevPullback - targetPullback) * 0.14, 0.005);
           cameraStunPullbacks[playerId] = Math.max(0, prevPullback - step);
+        }
+
+        // 기절(STUN, STUN_DEFENSE) 시에는 뒤쪽(+Z) 방향으로 몸이 살짝 기울어지고 머리가 중심에서 뒤로 살짝 회전
+        const stunTiltFactor = STUN_CAMERA_PULLBACK_MAX > 0
+          ? Math.min(1, Math.max(0, cameraStunPullbacks[playerId] / STUN_CAMERA_PULLBACK_MAX))
+          : 0;
+        if (stunTiltFactor > 0.001) {
+          const wobble = stunTremorIntensity > 0 ? Math.sin(stunPhase * 1.4) * 0.025 * stunTremorIntensity : 0;
+          bodyGroup?.userData?.setRotationOffset?.(0.24 * stunTiltFactor, 0, wobble);
+          headGroup?.userData?.setRotationOffset?.(0.36 * stunTiltFactor, wobble * 0.8, wobble);
+        } else {
+          bodyGroup?.userData?.setRotationOffset?.(0, 0, 0);
+          headGroup?.userData?.setRotationOffset?.(0, 0, 0);
         }
       }
 
@@ -665,12 +709,16 @@
     }
     applyPlayerDistanceLayout(currentPlayerDistance);
 
-    // 2) 패배까지 한 대 남았을 때(balance === -(maxSteps - 1) -> P1 경고, +(maxSteps - 1) -> P2 경고) 화면 하단 빨간 경고 표시
-    const warnThreshold = Math.max(1, (Number(setInfo.maxSteps) || 3) - 1);
+    // 2) 패배까지 한 대 남았을 때(현재 데미지 배수 기준 1타 남음) 화면 하단 빨간 경고 표시
+    const dmgStep = Math.max(1, Number(setInfo.damageMultiplier) || 1);
+    const warnThreshold = Math.max(1, (Number(setInfo.maxSteps) || 4) - dmgStep);
     const p1Danger = !setInfo.winner && setInfo.balance <= -warnThreshold;
     const p2Danger = !setInfo.winner && setInfo.balance >= warnThreshold;
     if ($('p1-danger-glow')) $('p1-danger-glow').hidden = !p1Danger;
     if ($('p2-danger-glow')) $('p2-danger-glow').hidden = !p2Danger;
+
+    // 2-1) 데미지 2배 카운트다운 및 바닥/화면 오오라 이펙트 갱신
+    root.DoubleDamageEffect?.update?.(setInfo);
 
     // 3) 세트 시작 준비(영점 정렬) 안내 오버레이 표시
     const isReadyPhase = setInfo.phase === 'READY';

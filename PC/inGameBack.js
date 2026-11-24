@@ -390,12 +390,14 @@
   }
 
   // 세트(줄다리기 밀어내기) 규칙 상태:
-  // - balance: 0(중앙), P1이 P2를 때리면 +1(P1 전진/P2 후퇴), P2가 P1을 때리면 -1(P2 전진/P1 후퇴)
-  // - 3번 연속으로 맞으면(+3 또는 -3) 승패 결정(WIN / LOSE 표시 후 원래 중앙 자리로 복귀)
-  // - 패배까지 1대 남은 상태(-2: P1 경고, +2: P2 경고)일 때 화면 하단 빨간 경고 표시
-  const SET_MAX_STEPS = 3;
+  // - 기본 체력(maxSteps): 4 (balance: 0 중앙, ±4 도달 시 승패 결정)
+  // - 게임 시작(PLAYING) 후 1분(60초)이 지나면 데미지 2배(damageMultiplier: 2) 적용
+  // - 1분 도달 10초 전(50초~60초)부터 화면 중앙 카운트다운(countdownRemaining: 10..1) 표시
+  const SET_MAX_STEPS = 4;
   const SET_STEP_DISTANCE = 1.1;
   const SET_RESULT_DISPLAY_SEC = 2.0;
+  const SET_DOUBLE_DAMAGE_SEC = 60.0;
+  const SET_COUNTDOWN_WINDOW_SEC = 10.0;
 
   const setState = {
     phase: 'READY', // 'READY' (세트 시작 준비 및 영점 정렬) -> 'PLAYING' (전투 진행) -> 'RESULT' (WIN/LOSE 표시)
@@ -408,6 +410,12 @@
     stepDistance: SET_STEP_DISTANCE,
     winner: null,
     resultTimer: 0,
+    elapsedTime: 0,
+    doubleDamageTime: SET_DOUBLE_DAMAGE_SEC,
+    countdownWindow: SET_COUNTDOWN_WINDOW_SEC,
+    isDoubleDamage: false,
+    damageMultiplier: 1,
+    countdownRemaining: 0,
   };
 
   function resetSetState() {
@@ -417,6 +425,10 @@
     setState.balance = 0;
     setState.winner = null;
     setState.resultTimer = 0;
+    setState.elapsedTime = 0;
+    setState.isDoubleDamage = false;
+    setState.damageMultiplier = 1;
+    setState.countdownRemaining = 0;
     for (const player of Object.values(playerData)) {
       player.state = PLAYER_STATE.IDLE;
       player.stateDuration = 0;
@@ -1463,12 +1475,13 @@
     }
 
     // 4) 방어 상태가 아니거나 방어 각도/선분길이 조건을 만족하지 못한 경우에만 머리 히트박스 피격(HIT) 판정
-    //    때리면 앞으로 전진하고 맞으면 뒤로 밀려남 (balance: P1 적중 시 +1, P2 적중 시 -1, ±3 도달 시 승패 결정)
+    //    때리면 앞으로 전진하고 맞으면 뒤로 밀려남 (기본 데미지 1, 1분 경과 후 데미지 2배, ±maxSteps 도달 시 승패 결정)
+    const dmg = Math.max(1, Number(setState.damageMultiplier) || 1);
     if (s1 === PLAYER_STATE.ATTACK && !p1.attackHasHit && !p2BlockedByAngle && impactOnP2) {
       p1.attackHasHit = true;
       p2.hitImpact = impactOnP2;
       setPlayerState(p2, PLAYER_STATE.HIT, JUDGMENT_DURATION.ATTACK_SUCCESS_HIT);
-      setState.balance = Math.min(setState.maxSteps, setState.balance + 1);
+      setState.balance = Math.min(setState.maxSteps, setState.balance + dmg);
       if (setState.balance >= setState.maxSteps) {
         setState.phase = 'RESULT';
         setState.winner = 'PLAYER_1';
@@ -1480,7 +1493,7 @@
       p2.attackHasHit = true;
       p1.hitImpact = impactOnP1;
       setPlayerState(p1, PLAYER_STATE.HIT, JUDGMENT_DURATION.ATTACK_SUCCESS_HIT);
-      setState.balance = Math.max(-setState.maxSteps, setState.balance - 1);
+      setState.balance = Math.max(-setState.maxSteps, setState.balance - dmg);
       if (setState.balance <= -setState.maxSteps) {
         setState.phase = 'RESULT';
         setState.winner = 'PLAYER_2';
@@ -1519,6 +1532,23 @@
       if (setState.resultTimer <= 0) {
         resetSetState();
         return;
+      }
+    }
+
+    // 게임 진행(PLAYING) 중 내부 경과 타이머 갱신 -> 1분(60초) 경과 시 데미지 2배, 10초 전부터 카운트다운
+    if (setState.phase === 'PLAYING' && !setState.winner) {
+      setState.elapsedTime = Number((setState.elapsedTime + dt).toFixed(4));
+      const remainingToDouble = setState.doubleDamageTime - setState.elapsedTime;
+      if (remainingToDouble <= 0) {
+        setState.isDoubleDamage = true;
+        setState.damageMultiplier = 2;
+        setState.countdownRemaining = 0;
+      } else {
+        setState.isDoubleDamage = false;
+        setState.damageMultiplier = 1;
+        setState.countdownRemaining = remainingToDouble <= setState.countdownWindow
+          ? Math.ceil(remainingToDouble)
+          : 0;
       }
     }
 
