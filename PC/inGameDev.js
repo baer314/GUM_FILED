@@ -19,6 +19,7 @@
     'defense-min-segment-length',
     'stun-circle-radius',
     'player-distance',
+    'hit-pushback-distance',
     'self-head-opacity',
     'arm-opacity',
     'head-offset-z',
@@ -100,6 +101,9 @@
         </label>
         <label>플레이어 간 간격
           <input id="player-distance" type="number" min="0.5" max="20" step="0.1" value="3.0">
+        </label>
+        <label>피격 시 1데미지당 밀려나는 거리
+          <input id="hit-pushback-distance" type="number" min="0" max="10" step="0.05" value="1.1">
         </label>
         <label>본인 화면 머리 불투명도 (0~1)
           <input id="self-head-opacity" type="number" min="0" max="1" step="0.05" value="0.35">
@@ -332,6 +336,10 @@
     if (dist !== undefined && $('player-distance')) {
       $('player-distance').value = String(dist);
     }
+    const pushbackDist = root.InGameBack?.getHitPushbackDistance?.();
+    if (pushbackDist !== undefined && $('hit-pushback-distance')) {
+      $('hit-pushback-distance').value = String(pushbackDist);
+    }
     const headOpacity = root.InGameBack?.getSelfHeadOpacity?.() ?? root.InGameFront?.getSelfHeadOpacity?.();
     if (headOpacity !== undefined && $('self-head-opacity')) {
       $('self-head-opacity').value = String(headOpacity);
@@ -428,6 +436,9 @@
       } else {
         root.InGameFront?.setPlayerDistance?.(nextDist);
       }
+    }
+    if ($('hit-pushback-distance')) {
+      root.InGameBack?.setHitPushbackDistance?.($('hit-pushback-distance').value);
     }
     if ($('self-head-opacity')) {
       const nextOpacity = $('self-head-opacity').value;

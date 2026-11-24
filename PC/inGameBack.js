@@ -391,16 +391,27 @@
 
   // 세트(줄다리기 밀어내기) 규칙 상태:
   // - 기본 체력(maxSteps): 4 (balance: 0 중앙, ±4 도달 시 승패 결정)
+  // - 세트 흐름: INTRO(세트 시작 연출) -> READY(볼륨 업 키 정렬 준비) -> PLAYING(전투 진행) -> RESULT(승패 피니시 연출)
   // - 게임 시작(PLAYING) 후 1분(60초)이 지나면 데미지 2배(damageMultiplier: 2) 적용
   // - 1분 도달 10초 전(50초~60초)부터 화면 중앙 카운트다운(countdownRemaining: 10..1) 표시
   const SET_MAX_STEPS = 4;
   const SET_STEP_DISTANCE = 1.1;
-  const SET_RESULT_DISPLAY_SEC = 2.0;
+  const SET_INTRO_DURATION_SEC = 5.0;
+  const SET_READY_CUE_SEC = 1.05;
+  const SET_FIGHT_BANNER_SEC = 0.85;
+  const SET_RESULT_DISPLAY_SEC = 2.8;
   const SET_DOUBLE_DAMAGE_SEC = 60.0;
   const SET_COUNTDOWN_WINDOW_SEC = 10.0;
 
   const setState = {
-    phase: 'READY', // 'READY' (세트 시작 준비 및 영점 정렬) -> 'PLAYING' (전투 진행) -> 'RESULT' (WIN/LOSE 표시)
+    phase: 'INTRO', // 'INTRO' -> 'READY' -> 'READY_CUE' -> 'PLAYING' -> 'RESULT'
+    setNumber: 1,
+    lastWinner: null,
+    introTimer: SET_INTRO_DURATION_SEC,
+    introDuration: SET_INTRO_DURATION_SEC,
+    introAssemblePlayers: ['PLAYER_1', 'PLAYER_2'],
+    readyCueTimer: 0,
+    fightBannerTimer: 0,
     ready: {
       PLAYER_1: false,
       PLAYER_2: false,
@@ -418,10 +429,27 @@
     countdownRemaining: 0,
   };
 
-  function resetSetState() {
-    setState.phase = 'READY';
+  function resetSetState({ nextSet = false } = {}) {
+    if (nextSet) {
+      setState.setNumber += 1;
+    } else {
+      setState.setNumber = 1;
+      setState.lastWinner = null;
+    }
+    setState.phase = 'INTRO';
+    setState.introTimer = SET_INTRO_DURATION_SEC;
+    setState.introDuration = SET_INTRO_DURATION_SEC;
+    // 1세트면 두 플레이어 모두 패배 판정으로 조립 애니메이션 진행, 2세트 이상은 직전 라운드 패자만 조립
+    if (setState.setNumber === 1 || !setState.lastWinner) {
+      setState.introAssemblePlayers = ['PLAYER_1', 'PLAYER_2'];
+    } else {
+      const prevLoser = setState.lastWinner === 'PLAYER_1' ? 'PLAYER_2' : 'PLAYER_1';
+      setState.introAssemblePlayers = [prevLoser];
+    }
     setState.ready.PLAYER_1 = false;
     setState.ready.PLAYER_2 = false;
+    setState.readyCueTimer = 0;
+    setState.fightBannerTimer = 0;
     setState.balance = 0;
     setState.winner = null;
     setState.resultTimer = 0;
@@ -439,11 +467,31 @@
       player.attackTriggerStreak = 0;
       player.hitImpact = null;
     }
-    return { ...setState, ready: { ...setState.ready } };
+    return {
+      ...setState,
+      ready: { ...setState.ready },
+      introAssemblePlayers: [...setState.introAssemblePlayers],
+    };
   }
 
   function getSetState() {
-    return { ...setState, ready: { ...setState.ready } };
+    return {
+      ...setState,
+      ready: { ...setState.ready },
+      introAssemblePlayers: [...setState.introAssemblePlayers],
+    };
+  }
+
+  function setHitPushbackDistance(value) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num >= 0) {
+      setState.stepDistance = num;
+    }
+    return setState.stepDistance;
+  }
+
+  function getHitPushbackDistance() {
+    return setState.stepDistance;
   }
 
   // 센서 노이즈 스파이크 방지용 스무딩 및 공격 중 회전 감쇠 파라미터 (개발자 패널에서 실시간 조절 가능)
@@ -1504,14 +1552,28 @@
 
   // 2. 값에 반응해 상태를 갱신하기
   function updateState(sensorData = new Map(), dt = 1 / TICK_RATE) {
-    // 세트 준비(READY) 단계: 참여 중인 플레이어가 모두 볼륨 업 키(button === 1)를 눌러 정렬을 완료하면 게임 시작
+    // 세트 시작 인트로(INTRO) 단계: 옆면 카메라 접근 + 전 라운드 패자 조립 애니메이션 완료 후 READY로 전환
+    if (setState.phase === 'INTRO') {
+      for (const player of Object.values(playerData)) {
+        setPlayerState(player, PLAYER_STATE.IDLE, 0, { force: true });
+      }
+      setState.introTimer = Math.max(0, Number((setState.introTimer - dt).toFixed(4)));
+      if (setState.introTimer <= 0) {
+        setState.phase = 'READY';
+      }
+      return;
+    }
+
+    // 세트 준비(READY) 단계: 참여 중인 플레이어가 모두 볼륨 업 키(button === 1)를 눌러 정렬을 완료하면 READY -> FIGHT! 시퀀스로 전환
     if (setState.phase === 'READY') {
       const connectedIds = currentPlayers
         .map((p) => p.id)
         .filter((id) => id === 'PLAYER_1' || id === 'PLAYER_2');
       const requiredIds = connectedIds.length > 0 ? connectedIds : ['PLAYER_1', 'PLAYER_2'];
       if (requiredIds.every((id) => setState.ready[id])) {
-        setState.phase = 'PLAYING';
+        setState.phase = 'READY_CUE';
+        setState.readyCueTimer = SET_READY_CUE_SEC;
+        setState.fightBannerTimer = 0;
         for (const player of Object.values(playerData)) {
           setPlayerState(player, PLAYER_STATE.IDLE, 0, { force: true });
           player.attackCooldown = 0.25;
@@ -1526,11 +1588,37 @@
       }
     }
 
-    // 세트 결과(WIN/LOSE) 표시 타이머 차감 -> 만료 시 중앙 원래 자리 및 다음 세트 준비 단계로 초기화
+    // 준비 완료 후 READY -> FIGHT! 연출 대기 단계 (전투 판정 잠금, 종료 즉시 FIGHT! 배너와 함께 PLAYING 시작)
+    if (setState.phase === 'READY_CUE') {
+      for (const player of Object.values(playerData)) {
+        setPlayerState(player, PLAYER_STATE.IDLE, 0, { force: true });
+        player.attackTriggerStreak = 0;
+      }
+      setState.readyCueTimer = Math.max(0, Number((setState.readyCueTimer - dt).toFixed(4)));
+      if (setState.readyCueTimer <= 0) {
+        setState.phase = 'PLAYING';
+        setState.fightBannerTimer = SET_FIGHT_BANNER_SEC;
+        for (const player of Object.values(playerData)) {
+          setPlayerState(player, PLAYER_STATE.IDLE, 0, { force: true });
+          player.attackCooldown = 0.25;
+          player.attackTriggerStreak = 0;
+        }
+      } else {
+        return;
+      }
+    }
+
+    // FIGHT! 배너 표시 잔여 시간 차감
+    if (setState.fightBannerTimer > 0) {
+      setState.fightBannerTimer = Math.max(0, Number((setState.fightBannerTimer - dt).toFixed(4)));
+    }
+
+    // 세트 결과(WIN/LOSE) 표시 타이머 차감 -> 만료 시 직전 승자를 기록하고 다음 세트 인트로(INTRO)로 전환
     if (setState.resultTimer > 0) {
       setState.resultTimer = Math.max(0, Number((setState.resultTimer - dt).toFixed(4)));
       if (setState.resultTimer <= 0) {
-        resetSetState();
+        setState.lastWinner = setState.winner;
+        resetSetState({ nextSet: true });
         return;
       }
     }
@@ -1678,6 +1766,8 @@
     setState,
     getSetState,
     resetSetState,
+    setHitPushbackDistance,
+    getHitPushbackDistance,
     start,
     stop,
     onSensorData,

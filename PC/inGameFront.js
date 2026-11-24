@@ -38,20 +38,55 @@
   // [수치 조절용] 방어키를 누를 때 팔(손목) 위치는 유지하고 검만 현재 검 손잡이 방향(+Z) 기준으로 이동하는 기본 오프셋
   const DEFENSE_HAND_OFFSET = { x: 0.0, y: 0, z: 1.2 };
 
+  // 플레이어 부유(둥실둥실) 연출 파라미터 (물리 판정과 무관한 그래픽 전용)
+  const PLAYER_BASE_Y = 1.1;
+  const FLOAT_BASE_LIFT = 0.04;   // 바닥(y=0)에 닿지 않도록 살짝 띄운 기준 높이 오프셋
+  const FLOAT_AMPLITUDE = 0.06;   // 위아래 부유 진폭
+  const FLOAT_SPEED = 2.2;        // 부유 주기 속도 (rad/s, 약 2.85초 주기)
+  const FLOAT_PHASE_OFFSET = {
+    PLAYER_1: 0,
+    PLAYER_2: Math.PI * 0.72,     // 두 플레이어가 어긋나게 떠다니도록 위상차 부여
+  };
+
+  function getPlayerFloatY(playerId, nowMs) {
+    const t = (nowMs / 1000) * FLOAT_SPEED + (FLOAT_PHASE_OFFSET[playerId] || 0);
+    return PLAYER_BASE_Y + FLOAT_BASE_LIFT + Math.sin(t) * FLOAT_AMPLITUDE;
+  }
+
+  function updatePlayerFloatPositions() {
+    const nowMs = typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now();
+    const p1Group = playerGroups.get('PLAYER_1');
+    if (p1Group?.position) {
+      p1Group.position.y = getPlayerFloatY('PLAYER_1', nowMs);
+    }
+    const p2Group = playerGroups.get('PLAYER_2');
+    if (p2Group?.position) {
+      p2Group.position.y = getPlayerFloatY('PLAYER_2', nowMs);
+    }
+  }
+
   function applyPlayerDistanceLayout(distance = currentPlayerDistance) {
     const num = Number(distance);
     if (Number.isFinite(num) && num > 0) {
       currentPlayerDistance = num;
     }
+    if (root.EndSetAnimation?.isActive?.() || root.StartSetAnimation?.isActive?.()) {
+      return;
+    }
     const halfDist = currentPlayerDistance / 2;
+    const nowMs = typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now();
 
     const p1Group = playerGroups.get('PLAYER_1');
     if (p1Group?.position?.set) {
-      p1Group.position.set(-halfDist + currentArenaShiftX, 1.1, 0);
+      p1Group.position.set(-halfDist + currentArenaShiftX, getPlayerFloatY('PLAYER_1', nowMs), 0);
     }
     const p2Group = playerGroups.get('PLAYER_2');
     if (p2Group?.position?.set) {
-      p2Group.position.set(halfDist + currentArenaShiftX, 1.1, 0);
+      p2Group.position.set(halfDist + currentArenaShiftX, getPlayerFloatY('PLAYER_2', nowMs), 0);
     }
 
     const shake1 = cameraShakeOffsets.PLAYER_1 || { x: 0, y: 0, z: 0 };
@@ -96,8 +131,10 @@
     const mesh = meshes.get(playerId);
     const headGroup = mesh?.userData?.headGroup;
     const bodyGroup = mesh?.userData?.bodyGroup;
-    headGroup?.userData?.setOpacity?.(opacity);
-    bodyGroup?.userData?.setOpacity?.(opacity);
+    const headReveal = root.StartSetAnimation?.getPartRevealOpacity?.(playerId, 'head') ?? 1.0;
+    const bodyReveal = root.StartSetAnimation?.getPartRevealOpacity?.(playerId, 'body') ?? 1.0;
+    headGroup?.userData?.setOpacity?.(opacity * headReveal);
+    bodyGroup?.userData?.setOpacity?.(opacity * bodyReveal);
   }
 
   function setSelfHeadOpacity(opacity) {
@@ -302,23 +339,39 @@
 
   function renderSplitView() {
     if (!renderer || !scene || !cameraP1 || !cameraP2) return;
+    const isStartSetActive = Boolean(root.StartSetAnimation?.isActive?.());
+    const isEndSetActive = Boolean(root.EndSetAnimation?.isActive?.());
+    if (isStartSetActive) {
+      root.StartSetAnimation.updateFrame();
+    } else if (isEndSetActive) {
+      root.EndSetAnimation.updateFrame(root.THREE);
+    } else {
+      updatePlayerFloatPositions();
+    }
     const width = root.innerWidth || 1280;
     const height = root.innerHeight || 720;
     const halfWidth = Math.max(1, Math.floor(width / 2));
     const rightWidth = Math.max(1, width - halfWidth);
+    const endLoserId = isEndSetActive ? root.EndSetAnimation?.getLoserId?.() : null;
+    const p1SelfOpacity = isStartSetActive
+      ? (root.StartSetAnimation?.getSelfOpacityForCamera?.('PLAYER_1', currentSelfHeadOpacity) ?? 1.0)
+      : (endLoserId === 'PLAYER_1' ? 0 : currentSelfHeadOpacity);
+    const p2SelfOpacity = isStartSetActive
+      ? (root.StartSetAnimation?.getSelfOpacityForCamera?.('PLAYER_2', currentSelfHeadOpacity) ?? 1.0)
+      : (endLoserId === 'PLAYER_2' ? 0 : currentSelfHeadOpacity);
 
     renderer.setScissorTest?.(true);
 
-    // 좌측: 플레이어 1 화면 (본인 PLAYER_1 머리는 설정된 불투명도 적용, 상대 PLAYER_2 머리는 1.0)
-    setPlayerHeadOpacity('PLAYER_1', currentSelfHeadOpacity);
+    // 좌측: 플레이어 1 화면 (인트로/피니시 연출 시 투명도 자동 보간)
+    setPlayerHeadOpacity('PLAYER_1', p1SelfOpacity);
     setPlayerHeadOpacity('PLAYER_2', 1.0);
     renderer.setViewport?.(0, 0, halfWidth, height);
     renderer.setScissor?.(0, 0, halfWidth, height);
     renderer.render(scene, cameraP1);
 
-    // 우측: 플레이어 2 화면 (본인 PLAYER_2 머리는 설정된 불투명도 적용, 상대 PLAYER_1 머리는 1.0)
+    // 우측: 플레이어 2 화면 (인트로/피니시 연출 시 투명도 자동 보간)
     setPlayerHeadOpacity('PLAYER_1', 1.0);
-    setPlayerHeadOpacity('PLAYER_2', currentSelfHeadOpacity);
+    setPlayerHeadOpacity('PLAYER_2', p2SelfOpacity);
     renderer.setViewport?.(halfWidth, 0, rightWidth, height);
     renderer.setScissor?.(halfWidth, 0, rightWidth, height);
     renderer.render(scene, cameraP2);
@@ -348,6 +401,8 @@
     }
     animId = null;
     root.DoubleDamageEffect?.reset?.();
+    root.StartSetAnimation?.reset?.();
+    root.EndSetAnimation?.reset?.();
     if ($('ingame-view')) $('ingame-view').hidden = true;
     if ($('lobby-view')) $('lobby-view').hidden = false;
   }
@@ -602,6 +657,7 @@
       const headGroup = mesh.userData?.headGroup;
       const bodyGroup = mesh.userData?.bodyGroup;
       const isHit = data.state === 'HIT' && Number(data.stateDuration) > 0;
+      headGroup?.userData?.setEyeExpression?.(isHit ? 'HIT' : 'NORMAL');
       let hitCamFactor = 0;
       if (isHit && data.hitImpact) {
         const totalDur = Math.max(0.05, Number(data.hitImpact.totalDuration) || 1.0);
@@ -699,8 +755,42 @@
     const setInfo = root.InGameBack?.getSetState?.();
     if (!setInfo) return;
 
+    // 0) 세트 시작 인트로(INTRO) 및 종료 피니시(RESULT) 애니메이션 동기화
+    const wasEndSetActive = Boolean(root.EndSetAnimation?.isActive?.());
+    root.EndSetAnimation?.syncSetState?.(setInfo, {
+      playerGroups,
+      meshes,
+      cameraP1,
+      cameraP2,
+      receivedPlayerInfo,
+    });
+    const isEndSetActive = Boolean(root.EndSetAnimation?.isActive?.());
+
+    const wasStartSetActive = Boolean(root.StartSetAnimation?.isActive?.());
+    root.StartSetAnimation?.syncSetState?.(setInfo, {
+      playerGroups,
+      meshes,
+      cameraP1,
+      cameraP2,
+      playerDistance: currentPlayerDistance,
+      cameraBackOffset: currentCameraBackOffset,
+      cameraHeight: currentCameraHeight,
+      cameraLookForward: CAMERA_LOOK_FORWARD,
+      selfHeadOpacity: currentSelfHeadOpacity,
+      armOpacity: currentArmOpacity,
+    });
+    const isStartSetActive = Boolean(root.StartSetAnimation?.isActive?.());
+    root.StartSetAnimation?.updateReadyFightCue?.(setInfo);
+    if ((wasEndSetActive && !isEndSetActive) || (wasStartSetActive && !isStartSetActive)) {
+      if (!isStartSetActive && !isEndSetActive) {
+        // 애니메이션 종료 직후 플레이어 및 카메라 위치 즉시 복구
+        applyPlayerDistanceLayout(currentPlayerDistance);
+      }
+    }
+
     // 1) 세트 밀어내기 위치 부드럽게 보간 (때리면 앞으로 전진, 맞으면 뒤로 후퇴, 리셋 시 중앙으로 복귀)
-    const targetShiftX = (Number(setInfo.balance) || 0) * (Number(setInfo.stepDistance) || 1.1);
+    const stepDist = Number.isFinite(Number(setInfo.stepDistance)) ? Number(setInfo.stepDistance) : 1.1;
+    const targetShiftX = (Number(setInfo.balance) || 0) * stepDist;
     const diff = targetShiftX - currentArenaShiftX;
     if (Math.abs(diff) < 0.004) {
       currentArenaShiftX = targetShiftX;

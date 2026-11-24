@@ -247,6 +247,92 @@
     return texture;
   }
 
+  // 피격(HIT) 시 표시되는 X 모양 발광 LED 눈 텍스처 생성
+  function createHitEyeTexture(THREE, eyeColorVal) {
+    if (typeof document === 'undefined' || !THREE.CanvasTexture) return null;
+    const W = 512;
+    const H = 400;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    const { r, g, b } = resolveRgb(THREE, eyeColorVal);
+    const coreR = Math.min(255, r + 130);
+    const coreG = Math.min(255, g + 110);
+    const coreB = Math.min(255, b + 80);
+    const deepR = Math.max(0, Math.round(r * 0.55));
+    const deepG = Math.max(0, Math.round(g * 0.65));
+    const deepB = Math.max(0, Math.round(b * 0.92));
+
+    const eyes = [
+      { x: 176, y: 224, sizeX: 38, sizeY: 36, rot: 0.08 },
+      { x: 336, y: 224, sizeX: 38, sizeY: 36, rot: -0.08 },
+    ];
+
+    // 1) 부드러운 외곽 발광 헤일로
+    eyes.forEach((eye) => {
+      ctx.save();
+      ctx.translate(eye.x, eye.y);
+      const glowGrad = ctx.createRadialGradient(0, 0, 8, 0, 0, 76);
+      glowGrad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.62)`);
+      glowGrad.addColorStop(0.55, `rgba(${deepR}, ${deepG}, ${deepB}, 0.24)`);
+      glowGrad.addColorStop(1, `rgba(${deepR}, ${deepG}, ${deepB}, 0)`);
+      ctx.fillStyle = glowGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, 76, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // 2) 스캔라인이 적용된 선명한 X 눈 본체
+    const scanCanvas = document.createElement('canvas');
+    scanCanvas.width = W;
+    scanCanvas.height = H;
+    const sctx = scanCanvas.getContext('2d');
+
+    if (sctx) {
+      eyes.forEach((eye) => {
+        sctx.save();
+        sctx.translate(eye.x, eye.y);
+        sctx.rotate(eye.rot);
+        sctx.lineCap = 'round';
+
+        const drawX = (strokeStyle, lineWidth, shadowBlur) => {
+          sctx.strokeStyle = strokeStyle;
+          sctx.lineWidth = lineWidth;
+          sctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.95)`;
+          sctx.shadowBlur = shadowBlur;
+          sctx.beginPath();
+          sctx.moveTo(-eye.sizeX, -eye.sizeY);
+          sctx.lineTo(eye.sizeX, eye.sizeY);
+          sctx.moveTo(eye.sizeX, -eye.sizeY);
+          sctx.lineTo(-eye.sizeX, eye.sizeY);
+          sctx.stroke();
+        };
+
+        drawX(`rgb(${r}, ${g}, ${b})`, 20, 18);
+        drawX(`rgb(${coreR}, ${coreG}, ${coreB})`, 10, 6);
+        sctx.restore();
+      });
+
+      sctx.globalCompositeOperation = 'destination-out';
+      sctx.fillStyle = 'rgba(0, 0, 0, 0.48)';
+      for (let y = 0; y < H; y += 8) {
+        sctx.fillRect(0, y, W, 3);
+      }
+      sctx.globalCompositeOperation = 'source-over';
+
+      ctx.drawImage(scanCanvas, 0, 0);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    if (THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
   function createHead(THREE, color = 0x8ecab1, initialOffsetZ = 0, options = {}) {
     const radius = getHeadRadius();
     const offsetZ = Number.isFinite(Number(initialOffsetZ)) ? Number(initialOffsetZ) : 0;
@@ -264,6 +350,9 @@
     let visorMat = null;
     let eyeMesh = null;
     let eyeMat = null;
+    let normalEyeTex = null;
+    let hitEyeTex = null;
+    let currentEyeExpression = 'NORMAL';
 
     if (THREE.SphereGeometry && THREE.MeshStandardMaterial) {
       // 1. 유광 원형 머리 본체 (P2는 시안 위치에만 부분 주황 줄무늬 포함)
@@ -287,7 +376,8 @@
       // 2. 원형 구 표면을 감싸는 곡면 블랙 바이저 & 발광 LED 눈
       const visorTex = createVisorTexture(THREE);
       const resolvedEyeColor = EYE_COLOR !== null ? EYE_COLOR : color;
-      const eyeTex = createEyeTexture(THREE, resolvedEyeColor);
+      normalEyeTex = createEyeTexture(THREE, resolvedEyeColor);
+      hitEyeTex = createHitEyeTexture(THREE, resolvedEyeColor);
 
       if (visorTex) {
         const phiLength = Math.PI * 0.56;
@@ -311,10 +401,10 @@
         visorMesh.renderOrder = 1;
         headGroup.add(visorMesh);
 
-        if (eyeTex) {
+        if (normalEyeTex) {
           const EyeMaterialCtor = THREE.MeshBasicMaterial || THREE.MeshStandardMaterial;
           eyeMat = new EyeMaterialCtor({
-            map: eyeTex,
+            map: normalEyeTex,
             transparent: true,
             opacity: 1.0,
             depthWrite: false,
@@ -388,6 +478,19 @@
       headGroup.rotation?.set(x, y, z);
     }
 
+    function setEyeExpression(expression = 'NORMAL') {
+      const nextExpr = expression === 'HIT' ? 'HIT' : 'NORMAL';
+      if (currentEyeExpression === nextExpr) return;
+      currentEyeExpression = nextExpr;
+      headGroup.userData.eyeExpression = nextExpr;
+      if (!eyeMat) return;
+      const targetTex = nextExpr === 'HIT' ? (hitEyeTex || normalEyeTex) : normalEyeTex;
+      if (targetTex && eyeMat.map !== targetTex) {
+        eyeMat.map = targetTex;
+        eyeMat.needsUpdate = true;
+      }
+    }
+
     headGroup.userData = {
       headMesh,
       headMat,
@@ -399,6 +502,7 @@
       diameter: radius * 2,
       offsetZ,
       hasStripes,
+      eyeExpression: currentEyeExpression,
       shakeOffset: { x: 0, y: 0, z: 0 },
       rotationOffset: { x: 0, y: 0, z: 0 },
       setStripes,
@@ -406,6 +510,7 @@
       setOffsetZ,
       setShakeOffset,
       setRotationOffset,
+      setEyeExpression,
     };
 
     return headGroup;
