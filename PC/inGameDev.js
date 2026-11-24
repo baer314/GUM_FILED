@@ -6,6 +6,9 @@
 
   const DEV_INPUT_IDS = [
     'dur-attack',
+    'attack-cooldown',
+    'attack-rotation-damping',
+    'sensor-tilt-smoothing',
     'dur-attack-hit',
     'dur-attack-fail',
     'dur-parry-stun',
@@ -13,6 +16,7 @@
     'attack-arm-extension',
     'defense-sword-offset',
     'defense-angle-threshold',
+    'defense-min-segment-length',
     'stun-circle-radius',
     'player-distance',
     'self-head-opacity',
@@ -20,6 +24,7 @@
     'head-offset-z',
     'head-box-x',
     'head-box-y',
+    'head-box-y-up',
     'head-box-z',
     'camera-back-offset',
     'camera-height',
@@ -34,12 +39,14 @@
         <p class="frontal-hud-title">P1 정면 검 선분 (KEY 9)</p>
         <div id="frontal-svg-p1" class="frontal-svg-wrap"></div>
         <p id="frontal-state-p1" class="frontal-hud-meta">상태: IDLE (0.00s)</p>
+        <p id="frontal-len-p1" class="frontal-hud-meta">선분길이: —</p>
         <p id="frontal-angle-p1" class="frontal-hud-meta">두 검 각도: —</p>
       </div>
       <div class="frontal-hud-box frontal-hud-right">
         <p class="frontal-hud-title">P2 정면 검 선분 (KEY 9)</p>
         <div id="frontal-svg-p2" class="frontal-svg-wrap"></div>
         <p id="frontal-state-p2" class="frontal-hud-meta">상태: IDLE (0.00s)</p>
+        <p id="frontal-len-p2" class="frontal-hud-meta">선분길이: —</p>
         <p id="frontal-angle-p2" class="frontal-hud-meta">두 검 각도: —</p>
       </div>
     </div>
@@ -54,6 +61,15 @@
       <div class="duration-form">
         <label>공격 판정 → 기본공격(ATTACK) 유지시간 (초)
           <input id="dur-attack" type="number" min="0" max="60" step="0.1" value="0.5">
+        </label>
+        <label>공격 후 쿨다운 / 후딜레이 (초)
+          <input id="attack-cooldown" type="number" min="0" max="5" step="0.05" value="0.2">
+        </label>
+        <label>공격 중 검 회전 보간 계수 (0.05~1.0, 클수록 빠름)
+          <input id="attack-rotation-damping" type="number" min="0.05" max="1" step="0.05" value="0.18">
+        </label>
+        <label>평상시 검 회전 보간 계수 (0.05~1.0, 클수록 빠름)
+          <input id="sensor-tilt-smoothing" type="number" min="0.05" max="1" step="0.05" value="0.65">
         </label>
         <label>공격 성공 → 상대 피격(HIT) 시간 (초)
           <input id="dur-attack-hit" type="number" min="0" max="60" step="0.1" value="1.0">
@@ -76,6 +92,9 @@
         <label>방어 판정 검 교차 각도 허용치 (90° ± 도, 0~90)
           <input id="defense-angle-threshold" type="number" min="0" max="90" step="1" value="35">
         </label>
+        <label>방어 판정 최소 검 선분 길이 (0~2.70)
+          <input id="defense-min-segment-length" type="number" min="0" max="2.70" step="0.05" value="1.0">
+        </label>
         <label>기절 시 중앙 진입금지 원 반지름
           <input id="stun-circle-radius" type="number" min="0" max="2.5" step="0.05" value="0.55">
         </label>
@@ -91,12 +110,15 @@
         <label>머리 앞뒤 위치 (어깨 기준, -앞/+뒤)
           <input id="head-offset-z" type="number" min="-5" max="5" step="0.05" value="0.0">
         </label>
-        <label>머리 히트박스 크기 (가로 X / 세로 Y / 앞뒤 Z)
+        <label>머리 히트박스 크기 (가로 X / 세로 아래 Y / 앞뒤 Z)
           <div class="xyz-threshold-row">
             <input id="head-box-x" type="number" min="0.1" max="5" step="0.04" value="0.88" aria-label="머리 히트박스 가로 X">
-            <input id="head-box-y" type="number" min="0.1" max="5" step="0.04" value="0.88" aria-label="머리 히트박스 세로 Y">
+            <input id="head-box-y" type="number" min="0.1" max="5" step="0.04" value="0.88" aria-label="머리 히트박스 세로 아래 Y">
             <input id="head-box-z" type="number" min="0.1" max="5" step="0.04" value="0.88" aria-label="머리 히트박스 앞뒤 Z">
           </div>
+        </label>
+        <label>머리 히트박스 세로 위쪽 확장 (정수리 기준 +위)
+          <input id="head-box-y-up" type="number" min="-0.8" max="5" step="0.04" value="0.0" aria-label="머리 히트박스 세로 위쪽 확장">
         </label>
         <label>카메라 앞뒤 거리 (플레이어 뒤쪽 기준)
           <input id="camera-back-offset" type="number" min="-5" max="15" step="0.1" value="2.4">
@@ -222,11 +244,18 @@
     const p1Dur = Number(p1?.stateDuration || 0).toFixed(2);
     const p2State = p2?.state || 'IDLE';
     const p2Dur = Number(p2?.stateDuration || 0).toFixed(2);
+    const minLen = root.InGameBack?.getDefenseMinSegmentLength?.() ?? 1.0;
+    const len1 = Math.hypot(seg1.tip.x - seg1.handle.x, seg1.tip.y - seg1.handle.y).toFixed(2);
+    const len2 = Math.hypot(seg2.tip.x - seg2.handle.x, seg2.tip.y - seg2.handle.y).toFixed(2);
 
-    const boxSize = root.InGameBack?.getHeadHitboxSize?.() ?? root.InGameFront?.getHeadHitboxSize?.() ?? { x: 0.88, y: 0.88, z: 0.88 };
+    const boxSize = root.InGameBack?.getHeadHitboxSize?.() ?? root.InGameFront?.getHeadHitboxSize?.() ?? { x: 0.88, y: 0.88, yUp: 0, z: 0.88 };
     const defaultBoxW = Number(boxSize.x) > 0 ? Number(boxSize.x) : 0.88;
-    const defaultBoxH = Number(boxSize.y) > 0 ? Number(boxSize.y) : 0.88;
-    const defaultCenterY = 0.88 - defaultBoxH / 2;
+    const defaultBoxDown = Number(boxSize.y) > 0 ? Number(boxSize.y) : 0.88;
+    const defaultBoxUp = Number.isFinite(Number(boxSize.yUp)) ? Number(boxSize.yUp) : 0;
+    const defaultTopY = Math.max(0.88 - defaultBoxDown + 0.05, 0.88 + defaultBoxUp);
+    const defaultBottomY = 0.88 - defaultBoxDown;
+    const defaultBoxH = defaultTopY - defaultBottomY;
+    const defaultCenterY = (defaultTopY + defaultBottomY) / 2;
     const headBox1 = {
       x: p1?.headCollider?.frontalCenter?.x ?? 0,
       y: p1?.headCollider?.frontalCenter?.y ?? defaultCenterY,
@@ -248,6 +277,8 @@
     }
     if ($('frontal-state-p1')) $('frontal-state-p1').textContent = `상태: ${p1State} (${p1Dur}s)`;
     if ($('frontal-state-p2')) $('frontal-state-p2').textContent = `상태: ${p2State} (${p2Dur}s)`;
+    if ($('frontal-len-p1')) $('frontal-len-p1').textContent = `선분길이: ${len1} (방어 ≥ ${Number(minLen).toFixed(2)})`;
+    if ($('frontal-len-p2')) $('frontal-len-p2').textContent = `선분길이: ${len2} (방어 ≥ ${Number(minLen).toFixed(2)})`;
     if ($('frontal-angle-p1')) $('frontal-angle-p1').textContent = angleText;
     if ($('frontal-angle-p2')) $('frontal-angle-p2').textContent = angleText;
   }
@@ -260,6 +291,18 @@
       if ($('dur-attack-hit')) $('dur-attack-hit').value = String(dur.ATTACK_SUCCESS_HIT ?? 1.0);
       if ($('dur-attack-fail')) $('dur-attack-fail').value = String(dur.ATTACK_FAIL_STUN ?? 1.0);
       if ($('dur-parry-stun')) $('dur-parry-stun').value = String(dur.PARRY_STUN ?? 1.0);
+    }
+    const atkCd = root.InGameBack?.getAttackCooldownDuration?.();
+    if (atkCd !== undefined && $('attack-cooldown')) {
+      $('attack-cooldown').value = String(atkCd);
+    }
+    const atkDamp = root.InGameBack?.getAttackRotationDamping?.();
+    if (atkDamp !== undefined && $('attack-rotation-damping')) {
+      $('attack-rotation-damping').value = String(atkDamp);
+    }
+    const tiltSmooth = root.InGameBack?.getSensorTiltSmoothing?.();
+    if (tiltSmooth !== undefined && $('sensor-tilt-smoothing')) {
+      $('sensor-tilt-smoothing').value = String(tiltSmooth);
     }
     const mult = root.InGameBack?.getArmSwingMultiplier?.();
     if (mult !== undefined && $('arm-swing-multiplier')) {
@@ -276,6 +319,10 @@
     const defAngle = root.InGameBack?.getDefenseAngleThreshold?.();
     if (defAngle !== undefined && $('defense-angle-threshold')) {
       $('defense-angle-threshold').value = String(defAngle);
+    }
+    const defMinLen = root.InGameBack?.getDefenseMinSegmentLength?.();
+    if (defMinLen !== undefined && $('defense-min-segment-length')) {
+      $('defense-min-segment-length').value = String(defMinLen);
     }
     const stunRad = root.InGameBack?.getStunCircleRadius?.() ?? root.InGameFront?.getStunCircleRadius?.();
     if (stunRad !== undefined && $('stun-circle-radius')) {
@@ -301,6 +348,7 @@
     if (headBox) {
       if ($('head-box-x')) $('head-box-x').value = String(headBox.x ?? 0.88);
       if ($('head-box-y')) $('head-box-y').value = String(headBox.y ?? 0.88);
+      if ($('head-box-y-up')) $('head-box-y-up').value = String(headBox.yUp ?? 0.0);
       if ($('head-box-z')) $('head-box-z').value = String(headBox.z ?? 0.88);
     }
     const camOffset = root.InGameBack?.getCameraOffset?.() ?? root.InGameFront?.getCameraOffset?.();
@@ -323,6 +371,15 @@
       ATTACK_FAIL_STUN: $('dur-attack-fail')?.value,
       PARRY_STUN: $('dur-parry-stun')?.value,
     });
+    if ($('attack-cooldown')) {
+      root.InGameBack?.setAttackCooldownDuration?.($('attack-cooldown').value);
+    }
+    if ($('attack-rotation-damping')) {
+      root.InGameBack?.setAttackRotationDamping?.($('attack-rotation-damping').value);
+    }
+    if ($('sensor-tilt-smoothing')) {
+      root.InGameBack?.setSensorTiltSmoothing?.($('sensor-tilt-smoothing').value);
+    }
     if ($('arm-swing-multiplier')) {
       root.InGameBack?.setArmSwingMultiplier?.($('arm-swing-multiplier').value);
     }
@@ -346,6 +403,13 @@
       const nextAngle = Number($('defense-angle-threshold').value);
       if (Number.isFinite(nextAngle) && nextAngle >= 0) {
         root.InGameBack?.setDefenseAngleThreshold?.(nextAngle);
+        renderFrontalSwordHud();
+      }
+    }
+    if ($('defense-min-segment-length')) {
+      const nextMinLen = Number($('defense-min-segment-length').value);
+      if (Number.isFinite(nextMinLen) && nextMinLen >= 0) {
+        root.InGameBack?.setDefenseMinSegmentLength?.(nextMinLen);
         renderFrontalSwordHud();
       }
     }
@@ -389,10 +453,11 @@
         root.InGameFront?.setHeadOffsetZ?.(nextOffsetZ);
       }
     }
-    if ($('head-box-x') || $('head-box-y') || $('head-box-z')) {
+    if ($('head-box-x') || $('head-box-y') || $('head-box-y-up') || $('head-box-z')) {
       const boxUpdates = {
         x: $('head-box-x')?.value,
         y: $('head-box-y')?.value,
+        yUp: $('head-box-y-up')?.value,
         z: $('head-box-z')?.value,
       };
       if (root.InGameBack?.setHeadHitboxSize) {

@@ -63,6 +63,26 @@
       <div class="split-pane-label split-left-label">PLAYER 1 VIEW</div>
       <div class="split-divider"></div>
       <div class="split-pane-label split-right-label">PLAYER 2 VIEW</div>
+      <div id="p1-danger-glow" class="split-danger-glow split-danger-left" hidden></div>
+      <div id="p2-danger-glow" class="split-danger-glow split-danger-right" hidden></div>
+      <div id="p1-set-result" class="split-result-banner split-result-left" hidden></div>
+      <div id="p2-set-result" class="split-result-banner split-result-right" hidden></div>
+      <div id="p1-ready-overlay" class="split-ready-overlay split-ready-left" hidden>
+        <div class="ready-card">
+          <p class="ready-eyebrow">PLAYER 1 · READY CHECK</p>
+          <img class="ready-pose-img" src="/Graphic/ready_pose.png" alt="준비 자세 안내">
+          <p class="ready-instruction">준비가 완료되면 핸드폰 화면을 위로 향하고<br>땅과 평행하게 든 채 <strong>볼륨 업 키</strong>를 눌러주세요</p>
+          <p id="p1-ready-status" class="ready-status">볼륨 업 키 입력 대기 중...</p>
+        </div>
+      </div>
+      <div id="p2-ready-overlay" class="split-ready-overlay split-ready-right" hidden>
+        <div class="ready-card">
+          <p class="ready-eyebrow">PLAYER 2 · READY CHECK</p>
+          <img class="ready-pose-img" src="/Graphic/ready_pose.png" alt="준비 자세 안내">
+          <p class="ready-instruction">준비가 완료되면 핸드폰 화면을 위로 향하고<br>땅과 평행하게 든 채 <strong>볼륨 업 키</strong>를 눌러주세요</p>
+          <p id="p2-ready-status" class="ready-status">볼륨 업 키 입력 대기 중...</p>
+        </div>
+      </div>
     </div>
     <div class="ingame-top-bar">
       <button id="back-to-lobby" type="button" class="overlay-btn">대기방 보기</button>

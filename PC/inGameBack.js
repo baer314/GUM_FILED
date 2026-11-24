@@ -223,6 +223,21 @@
     return defenseAngleThreshold;
   }
 
+  // 방어 판정 시 방어자의 정면 투영 검 선분 최소 길이 (검끝을 중앙으로 향하면 선분이 짧아져 방어 불가, 개발자 패널에서 조절 가능)
+  let defenseMinSegmentLength = 1.0;
+
+  function setDefenseMinSegmentLength(value) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num >= 0) {
+      defenseMinSegmentLength = num;
+    }
+    return defenseMinSegmentLength;
+  }
+
+  function getDefenseMinSegmentLength() {
+    return defenseMinSegmentLength;
+  }
+
   // 기절(STUN) 시 중앙에 생성되는 검 진입 금지 원의 반지름 (기절+방어 시에는 미적용, 개발자 패널에서 실시간 조절 가능)
   let stunCircleRadius = 0.55;
 
@@ -307,10 +322,11 @@
   }
 
   // 머리 직육면체 히트박스 각 모서리 길이 (기본값: 반지름 0.44인 머리 구에 접하도록 0.88 x 0.88 x 0.88)
-  // x: 좌우 가로 너비, y: 상하 세로 높이, z: 앞뒤 깊이
+  // x: 좌우 가로 너비, y: 정수리 기준 아래쪽 세로 길이, yUp: 정수리 기준 위쪽 추가 길이, z: 앞뒤 깊이
   const headHitboxSize = {
     x: 0.88,
     y: 0.88,
+    yUp: 0.0,
     z: 0.88,
   };
 
@@ -319,6 +335,12 @@
       const val = Number(updates[axis]);
       if (Number.isFinite(val) && val > 0) {
         headHitboxSize[axis] = val;
+      }
+    }
+    if (updates.yUp !== undefined) {
+      const yUpVal = Number(updates.yUp);
+      if (Number.isFinite(yUpVal)) {
+        headHitboxSize.yUp = yUpVal;
       }
     }
     root.InGameFront?.setHeadHitboxSize?.(headHitboxSize);
@@ -350,6 +372,125 @@
 
   function getCameraOffset() {
     return { ...cameraOffset };
+  }
+
+  // 공격 종료 후 다음 공격까지 대기하는 쿨다운(후딜레이, 초 단위, 개발자 패널에서 조절 가능)
+  let attackCooldownDuration = 0.2;
+
+  function setAttackCooldownDuration(value) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num >= 0) {
+      attackCooldownDuration = num;
+    }
+    return attackCooldownDuration;
+  }
+
+  function getAttackCooldownDuration() {
+    return attackCooldownDuration;
+  }
+
+  // 세트(줄다리기 밀어내기) 규칙 상태:
+  // - balance: 0(중앙), P1이 P2를 때리면 +1(P1 전진/P2 후퇴), P2가 P1을 때리면 -1(P2 전진/P1 후퇴)
+  // - 3번 연속으로 맞으면(+3 또는 -3) 승패 결정(WIN / LOSE 표시 후 원래 중앙 자리로 복귀)
+  // - 패배까지 1대 남은 상태(-2: P1 경고, +2: P2 경고)일 때 화면 하단 빨간 경고 표시
+  const SET_MAX_STEPS = 3;
+  const SET_STEP_DISTANCE = 1.1;
+  const SET_RESULT_DISPLAY_SEC = 2.0;
+
+  const setState = {
+    phase: 'READY', // 'READY' (세트 시작 준비 및 영점 정렬) -> 'PLAYING' (전투 진행) -> 'RESULT' (WIN/LOSE 표시)
+    ready: {
+      PLAYER_1: false,
+      PLAYER_2: false,
+    },
+    balance: 0,
+    maxSteps: SET_MAX_STEPS,
+    stepDistance: SET_STEP_DISTANCE,
+    winner: null,
+    resultTimer: 0,
+  };
+
+  function resetSetState() {
+    setState.phase = 'READY';
+    setState.ready.PLAYER_1 = false;
+    setState.ready.PLAYER_2 = false;
+    setState.balance = 0;
+    setState.winner = null;
+    setState.resultTimer = 0;
+    for (const player of Object.values(playerData)) {
+      player.state = PLAYER_STATE.IDLE;
+      player.stateDuration = 0;
+      player.attackHasHit = false;
+      player.attackStartFrontalSegment = null;
+      player.attackDirectionLocked = false;
+      player.attackCooldown = 0;
+      player.attackTriggerStreak = 0;
+      player.hitImpact = null;
+    }
+    return { ...setState, ready: { ...setState.ready } };
+  }
+
+  function getSetState() {
+    return { ...setState, ready: { ...setState.ready } };
+  }
+
+  // 센서 노이즈 스파이크 방지용 스무딩 및 공격 중 회전 감쇠 파라미터 (개발자 패널에서 실시간 조절 가능)
+  let sensorTiltSmoothing = 0.65;          // 일반 상태 쿼터니언 보간 계수 (0.05~1.0, 1.0이면 보간 없음)
+  let attackRotationDamping = 0.18;        // 공격(ATTACK) 중 회전 감쇠 보간 계수 (0.05~1.0, 1.0이면 감쇠 없음)
+  const ATTACK_TRIGGER_FRAMES = 2;         // 단발성 1프레임 스파이크 무시를 위한 연속 기준 초과 프레임 수
+
+  function setSensorTiltSmoothing(value) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num > 0 && num <= 1) {
+      sensorTiltSmoothing = num;
+    }
+    return sensorTiltSmoothing;
+  }
+
+  function getSensorTiltSmoothing() {
+    return sensorTiltSmoothing;
+  }
+
+  function setAttackRotationDamping(value) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num > 0 && num <= 1) {
+      attackRotationDamping = num;
+    }
+    return attackRotationDamping;
+  }
+
+  function getAttackRotationDamping() {
+    return attackRotationDamping;
+  }
+
+  // 두 단위 쿼터니언 간의 최단 경로 구면 선형 보간 (Slerp)
+  function slerpQuaternions(q1, q2, t) {
+    const a = normalizeQuaternion(q1 || { x: 0, y: 0, z: 0, w: 1 });
+    let b = normalizeQuaternion(q2 || { x: 0, y: 0, z: 0, w: 1 });
+    let dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+    if (dot < 0) {
+      b = { x: -b.x, y: -b.y, z: -b.z, w: -b.w };
+      dot = -dot;
+    }
+    if (dot > 0.9995) {
+      return normalizeQuaternion({
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+        w: a.w + (b.w - a.w) * t,
+      });
+    }
+    const theta0 = Math.acos(Math.min(1, Math.max(-1, dot)));
+    const sinTheta0 = Math.sin(theta0) || 1;
+    const theta = theta0 * t;
+    const s0 = Math.cos(theta) - (dot * Math.sin(theta)) / sinTheta0;
+    const s1 = Math.sin(theta) / sinTheta0;
+    return normalizeQuaternion({
+      x: s0 * a.x + s1 * b.x,
+      y: s0 * a.y + s1 * b.y,
+      z: s0 * a.z + s1 * b.z,
+      w: s0 * a.w + s1 * b.w,
+    });
   }
 
   // 플레이어별 영점 조절용 쿼터니언 변수 (버튼 2번 입력 시 갱신되며, 센서값에 곱해 영점을 0, 0, 0, 1로 만듦)
@@ -409,7 +550,10 @@
       stunCircleRadius,                            // 기절 시 중앙 검 진입금지 원 반지름
       currentArmExtension: 0,                      // 현재 보간된 팔 연장 길이
       attackHasHit: false,                         // 현재 공격 스윙에서 이미 피격 판정이 발생했는지 여부
-      attackStartFrontalSegment: null,             // 공격 판정 시작 시점의 정면 검 선분
+      attackStartFrontalSegment: null,             // 공격 판정 시작 시점에 고정된 정면 검 선분 (단일 방향 고정용)
+      attackDirectionLocked: false,                // 현재 공격의 방향이 고정되었는지 여부
+      attackCooldown: 0,                           // 공격 종료 후 회수 반동 오인식 방지용 쿨다운 (초)
+      attackTriggerStreak: 0,                      // 각속도 기준치 연속 초과 프레임 카운터 (1프레임 스파이크 필터링)
       hitImpact: null,                             // 피격 시 검이 맞은 방향 및 진동 정보
       prevSwordTipWorld: null,                     // 직전 틱 검끝 월드 좌표 (타격 스윙 방향 계산용)
       swordCollider: null,                         // 공격/방어 판정 시에만 활성화되는 검 선분 콜라이더
@@ -504,22 +648,44 @@
           playerData[playerId].button = payload.button;
         }
         // 버튼 2번이 눌리면 현재 센서 쿼터니언의 역원을 영점조절용 변수(zeroCalibration)에 저장
+        // 또한 세트 시작 준비(READY) 단계에서 볼륨 업 키(button === 1)를 누르면 검 영점 정렬과 동시에 준비 완료 처리
+        let calibratedNow = false;
         if (payload.button === 2) {
           zeroCalibration[playerId] = invertQuaternion(payload.rotation_vector);
+          calibratedNow = true;
+        } else if (setState.phase === 'READY' && payload.button === 1 && !setState.ready[playerId]) {
+          zeroCalibration[playerId] = invertQuaternion(payload.rotation_vector);
+          setState.ready[playerId] = true;
+          calibratedNow = true;
         }
         // 직전 플레이어 정보에 저장된 쿼터니언(tilt) 백업
         const prevTilt = playerData[playerId].tilt
           ? { ...playerData[playerId].tilt }
           : { x: 0, y: 0, z: 0, w: 1 };
-        // 영점조절용 변수를 센서값에 곱해서 실제 게임에 사용되는 tilt 값이 영점 기준 (0, 0, 0, 1)이 되게 함
-        playerData[playerId].tilt = multiplyQuaternions(
+        // 영점조절용 변수를 센서값에 곱해 목표 쿼터니언 산출
+        const targetTilt = multiplyQuaternions(
           zeroCalibration[playerId],
           normalizeQuaternion(payload.rotation_vector)
         );
-        // 플레이어 정보에 저장되는 쿼터니언(tilt)의 변화량으로부터 각속도(xyz) 계산 (영점 조절 직후에는 0으로 초기화)
-        playerData[playerId].angularVelocity = payload.button === 2
-          ? { x: 0, y: 0, z: 0 }
-          : computeAngularVelocity(prevTilt, playerData[playerId].tilt);
+        // 방법 3(센서 스파이크 저역통과 필터) & 방법 4(공격 중 급격한 손목 비틀기 회전 감쇠) 적용
+        if (calibratedNow) {
+          playerData[playerId].tilt = targetTilt;
+          playerData[playerId].angularVelocity = { x: 0, y: 0, z: 0 };
+          playerData[playerId].attackTriggerStreak = 0;
+        } else {
+          const smoothingFactor = playerData[playerId].state === PLAYER_STATE.ATTACK
+            ? attackRotationDamping
+            : sensorTiltSmoothing;
+          const smoothed = slerpQuaternions(prevTilt, targetTilt, smoothingFactor);
+          playerData[playerId].tilt = {
+            x: Number(smoothed.x.toFixed(4)) || 0,
+            y: Number(smoothed.y.toFixed(4)) || 0,
+            z: Number(smoothed.z.toFixed(4)) || 0,
+            w: Number(smoothed.w.toFixed(4)) || 0,
+          };
+          // 플레이어 정보에 저장되는 쿼터니언(tilt)의 변화량으로부터 각속도(xyz) 계산
+          playerData[playerId].angularVelocity = computeAngularVelocity(prevTilt, playerData[playerId].tilt);
+        }
         playerData[playerId].prevTilt = { ...playerData[playerId].tilt };
         playerData[playerId].armSwingMultiplier = armSwingMultiplier;
         playerData[playerId].attackArmExtension = attackArmExtension;
@@ -555,15 +721,28 @@
   function detectInputAction(player) {
     // 방어키(button === 1)를 누르고 있으면 방어 상태 우선 유지
     if (player.button === 1) {
+      player.attackTriggerStreak = 0;
       return PLAYER_STATE.DEFENSE;
     }
+    // 공격 종료 후 쿨다운 중에는 회수 반동으로 인한 재공격 차단
+    if (player.attackCooldown > 0) {
+      player.attackTriggerStreak = 0;
+      return PLAYER_STATE.IDLE;
+    }
     const av = player.angularVelocity || { x: 0, y: 0, z: 0 };
-    if (
+    const exceedsThreshold =
       Math.abs(av.x || 0) >= ATTACK_ANGULAR_THRESHOLD.x ||
       Math.abs(av.y || 0) >= ATTACK_ANGULAR_THRESHOLD.y ||
-      Math.abs(av.z || 0) >= ATTACK_ANGULAR_THRESHOLD.z
-    ) {
-      return PLAYER_STATE.ATTACK;
+      Math.abs(av.z || 0) >= ATTACK_ANGULAR_THRESHOLD.z;
+
+    if (exceedsThreshold) {
+      player.attackTriggerStreak = (player.attackTriggerStreak || 0) + 1;
+      // 방법 3: 단발성 1프레임 스파이크를 무시하고 연속 ATTACK_TRIGGER_FRAMES 이상 기준 초과 시에만 공격 발동
+      if (player.attackTriggerStreak >= ATTACK_TRIGGER_FRAMES) {
+        return PLAYER_STATE.ATTACK;
+      }
+    } else {
+      player.attackTriggerStreak = 0;
     }
     return PLAYER_STATE.IDLE;
   }
@@ -599,7 +778,7 @@
   const WRIST_BASE_OFFSET = { x: 0, y: 0.12, z: -0.95 };
   const HEAD_RADIUS = 0.44;
   const SWORD_BLADE_LENGTH = 2.2;
-  const SWORD_HANDLE_BACK = 0.25;
+  const SWORD_HANDLE_BACK = 0.50;
   const SWORD_HEAD_HIT_RADIUS = 0.14;
   const SWORD_CLASH_RADIUS = 0.34;
   const ARM_RETRACT_SMOOTHING = 0.16;
@@ -670,24 +849,25 @@
     return { qn: clampedQ, bladeDir: clampedBladeDir, angle };
   }
 
-  // armPivot 로컬 좌표를 월드 좌표로 변환
+  // armPivot 로컬 좌표를 월드 좌표로 변환 (세트 밀어내기 오프셋 arenaShiftX 반영)
   function armPivotLocalToWorld(playerId, localPt) {
     const halfDist = playerDistance / 2;
+    const arenaShiftX = setState.balance * setState.stepDistance;
     const bx = localPt.x + ARM_PIVOT_OFFSET.x;
     const by = localPt.y + ARM_PIVOT_OFFSET.y;
     const bz = localPt.z + ARM_PIVOT_OFFSET.z;
 
     if (playerId === 'PLAYER_1') {
-      // baseGroup position (-halfDist, 1.1, 0), rotation.y = -PI / 2
+      // baseGroup position (-halfDist + arenaShiftX, 1.1, 0), rotation.y = -PI / 2
       return {
-        x: -halfDist - bz,
+        x: -halfDist + arenaShiftX - bz,
         y: 1.1 + by,
         z: bx,
       };
     }
-    // PLAYER_2: baseGroup position (+halfDist, 1.1, 0), rotation.y = +PI / 2
+    // PLAYER_2: baseGroup position (+halfDist + arenaShiftX, 1.1, 0), rotation.y = +PI / 2
     return {
-      x: halfDist + bz,
+      x: halfDist + arenaShiftX + bz,
       y: 1.1 + by,
       z: -bx,
     };
@@ -786,21 +966,24 @@
 
     // 그래픽(구형 머리 메쉬)과 분리된 직육면체 머리 히트박스:
     // 기본 크기(0.88 x 0.88 x 0.88)는 반지름 0.44인 머리 구의 6면에 접하며,
-    // 세로(y) 크기를 늘리면 머리 윗면(정수리)은 구의 윗면에 고정된 채 아래쪽(몸통 방향)으로만 늘어남
+    // 세로 아래(y)는 정수리 기준 아래쪽으로, 세로 위쪽 추가(yUp)는 정수리 기준 위쪽으로 독립 조절 가능
     const headSphereCenterLocal = { x: 0, y: HEAD_RADIUS, z: headOffsetZ };
     const headSphereCenterWorld = armPivotLocalToWorld(playerId, headSphereCenterLocal);
-    const boxSize = {
-      x: Number(headHitboxSize.x) > 0 ? Number(headHitboxSize.x) : HEAD_RADIUS * 2,
-      y: Number(headHitboxSize.y) > 0 ? Number(headHitboxSize.y) : HEAD_RADIUS * 2,
-      z: Number(headHitboxSize.z) > 0 ? Number(headHitboxSize.z) : HEAD_RADIUS * 2,
-    };
+    const boxW = Number(headHitboxSize.x) > 0 ? Number(headHitboxSize.x) : HEAD_RADIUS * 2;
+    const boxDown = Number(headHitboxSize.y) > 0 ? Number(headHitboxSize.y) : HEAD_RADIUS * 2;
+    const boxUp = Number.isFinite(Number(headHitboxSize.yUp)) ? Number(headHitboxSize.yUp) : 0;
+    const boxD = Number(headHitboxSize.z) > 0 ? Number(headHitboxSize.z) : HEAD_RADIUS * 2;
+
     // 플레이어 로컬 x(가로) -> 월드 Z축, 로컬 y(세로) -> 월드 Y축, 로컬 z(앞뒤) -> 월드 X축
-    const halfWorldX = boxSize.z / 2;
-    const halfWorldZ = boxSize.x / 2;
-    const topWorldY = headSphereCenterWorld.y + HEAD_RADIUS;
-    const bottomWorldY = topWorldY - boxSize.y;
-    const boxCenterWorldY = topWorldY - boxSize.y / 2;
-    const frontalCenterY = HEAD_RADIUS * 2 - boxSize.y / 2;
+    const halfWorldX = boxD / 2;
+    const halfWorldZ = boxW / 2;
+    const baseTopWorldY = headSphereCenterWorld.y + HEAD_RADIUS;
+    const bottomWorldY = baseTopWorldY - boxDown;
+    const topWorldY = Math.max(bottomWorldY + 0.05, baseTopWorldY + boxUp);
+    const totalHeight = topWorldY - bottomWorldY;
+    const boxCenterWorldY = (topWorldY + bottomWorldY) / 2;
+    const baseTopLocalY = HEAD_RADIUS * 2;
+    const frontalCenterY = (Math.max(baseTopLocalY - boxDown + 0.05, baseTopLocalY + boxUp) + (baseTopLocalY - boxDown)) / 2;
 
     player.headCollider = {
       type: 'CUBOID',
@@ -809,7 +992,7 @@
         y: boxCenterWorldY,
         z: headSphereCenterWorld.z,
       },
-      size: boxSize,
+      size: { x: boxW, y: totalHeight, z: boxD, yDown: boxDown, yUp: boxUp },
       frontalCenter: { x: 0, y: frontalCenterY },
       min: {
         x: headSphereCenterWorld.x - halfWorldX,
@@ -1010,15 +1193,23 @@
     return segmentToSegmentDistance(a1, b1, a2, b2) <= threshold;
   }
 
-  // 공격자의 검과 방어자의 검이 수직(90도 +- 허용치)으로 교차하여 방어 성공 조건을 만족하는지 확인
-  // (두 선분이 이루는 예각이 90도일 때 수직 교차이므로 |90 - angle| <= defenseAngleThreshold 이면 90도 +- 설정치 이내)
+  // 공격자의 검과 방어자의 검이 수직(90도 +- 허용치)으로 교차하고, 방어자의 정면 검 선분 길이가 최소 기준 이상인지 확인
+  // 현재 두 검의 정면 각도를 우선 확인하고, 검끝이 중앙을 지나며 투영 선분이 짧아진 경우 공격 시작 시 고정된 선분 각도도 함께 확인
   function isDefenseAngleMatched(attacker, defender) {
     const defSeg = defender?.frontalSegment || defender?.swordCollider?.frontalSegment;
+    if (!defSeg) return false;
+
+    const defSegLen = Math.hypot(defSeg.tip.x - defSeg.handle.x, defSeg.tip.y - defSeg.handle.y);
+    if (defSegLen < defenseMinSegmentLength) {
+      return false;
+    }
+
     const curAttSeg = attacker?.frontalSegment || attacker?.swordCollider?.frontalSegment;
     const curAngle = angleBetweenSegmentsDeg(curAttSeg, defSeg);
     if (curAngle !== null && Math.abs(90 - curAngle) <= defenseAngleThreshold) {
       return true;
     }
+
     if (attacker?.attackStartFrontalSegment) {
       const startAngle = angleBetweenSegmentsDeg(attacker.attackStartFrontalSegment, defSeg);
       if (startAngle !== null && Math.abs(90 - startAngle) <= defenseAngleThreshold) {
@@ -1155,40 +1346,48 @@
     updatePlayerPhysicsColliders('PLAYER_1', p1);
     updatePlayerPhysicsColliders('PLAYER_2', p2);
 
+    // 세트 준비(READY) 단계이거나 승패(WIN/LOSE) 표시 중에는 전투 판정 중단
+    if (setState.phase !== 'PLAYING' || setState.winner) {
+      return;
+    }
+
     const s1 = p1.state;
     const s2 = p2.state;
 
-    // 공격 상태가 아닐 때는 공격 적중 플래그 및 공격 선분 기록 초기화
-    // 공격 중에는 정면 투영 선분 길이가 충분할 때 직전 유효 선분을 갱신하여 접촉 순간 중심부 왜곡을 방지
+    // 방법 1: 공격 상태가 시작되는 순간의 정면 검 선분을 1회만 고정(Lock)하여 공격 중 손목 비틀기로 방향이 바뀌지 않도록 함
     if (s1 !== PLAYER_STATE.ATTACK) {
       p1.attackHasHit = false;
       p1.attackStartFrontalSegment = null;
-    } else if (p1.frontalSegment) {
+      p1.attackDirectionLocked = false;
+    } else if (!p1.attackDirectionLocked && p1.frontalSegment) {
       const len1 = Math.hypot(
         p1.frontalSegment.tip.x - p1.frontalSegment.handle.x,
         p1.frontalSegment.tip.y - p1.frontalSegment.handle.y
       );
-      if (!p1.attackStartFrontalSegment || len1 >= 0.45) {
-        p1.attackStartFrontalSegment = {
-          handle: { ...p1.frontalSegment.handle },
-          tip: { ...p1.frontalSegment.tip },
-        };
+      p1.attackStartFrontalSegment = {
+        handle: { ...p1.frontalSegment.handle },
+        tip: { ...p1.frontalSegment.tip },
+      };
+      if (len1 >= 0.25) {
+        p1.attackDirectionLocked = true;
       }
     }
 
     if (s2 !== PLAYER_STATE.ATTACK) {
       p2.attackHasHit = false;
       p2.attackStartFrontalSegment = null;
-    } else if (p2.frontalSegment) {
+      p2.attackDirectionLocked = false;
+    } else if (!p2.attackDirectionLocked && p2.frontalSegment) {
       const len2 = Math.hypot(
         p2.frontalSegment.tip.x - p2.frontalSegment.handle.x,
         p2.frontalSegment.tip.y - p2.frontalSegment.handle.y
       );
-      if (!p2.attackStartFrontalSegment || len2 >= 0.45) {
-        p2.attackStartFrontalSegment = {
-          handle: { ...p2.frontalSegment.handle },
-          tip: { ...p2.frontalSegment.tip },
-        };
+      p2.attackStartFrontalSegment = {
+        handle: { ...p2.frontalSegment.handle },
+        tip: { ...p2.frontalSegment.tip },
+      };
+      if (len2 >= 0.25) {
+        p2.attackDirectionLocked = true;
       }
     }
 
@@ -1234,54 +1433,109 @@
     }
 
     // 2) PLAYER_1 공격 vs PLAYER_2 방어:
-    //    검이 닿은 타이밍(p1SwordTouchedP2)에 피격 판정보다 먼저 두 검의 각도(90도 +- 허용치)를 확인하여
-    //    방어 성공 시 공격자(PLAYER_1)에게 기절을 부여해 검이 튕겨져 나가게 함
-    if (s1 === PLAYER_STATE.ATTACK && isDefendingState(s2) && p1SwordTouchedP2) {
-      if (isDefenseAngleMatched(p1, p2)) {
+    //    방어 중일 때는 머리 히트박스보다 두 검의 각도(90도 +- 허용치)를 최우선으로 판정
+    //    - 각도가 맞으면 히트박스 피격은 원천 차단하고, 검이 닿은 타이밍(p1SwordTouchedP2)에 공격자(PLAYER_1)에게 기절 부여
+    const p2BlockedByAngle = s1 === PLAYER_STATE.ATTACK && isDefendingState(s2) && isDefenseAngleMatched(p1, p2);
+    if (p2BlockedByAngle) {
+      if (p1SwordTouchedP2) {
         setPlayerState(
           p1,
           p1.button === 1 ? PLAYER_STATE.STUN_DEFENSE : PLAYER_STATE.STUN,
           JUDGMENT_DURATION.ATTACK_FAIL_STUN
         );
-        return;
       }
+      return;
     }
 
     // 3) PLAYER_2 공격 vs PLAYER_1 방어:
-    //    검이 닿은 타이밍(p2SwordTouchedP1)에 피격 판정보다 먼저 두 검의 각도(90도 +- 허용치)를 확인하여
-    //    방어 성공 시 공격자(PLAYER_2)에게 기절을 부여해 검이 튕겨져 나가게 함
-    if (s2 === PLAYER_STATE.ATTACK && isDefendingState(s1) && p2SwordTouchedP1) {
-      if (isDefenseAngleMatched(p2, p1)) {
+    //    방어 중일 때는 머리 히트박스보다 두 검의 각도(90도 +- 허용치)를 최우선으로 판정
+    //    - 각도가 맞으면 히트박스 피격은 원천 차단하고, 검이 닿은 타이밍(p2SwordTouchedP1)에 공격자(PLAYER_2)에게 기절 부여
+    const p1BlockedByAngle = s2 === PLAYER_STATE.ATTACK && isDefendingState(s1) && isDefenseAngleMatched(p2, p1);
+    if (p1BlockedByAngle) {
+      if (p2SwordTouchedP1) {
         setPlayerState(
           p2,
           p2.button === 1 ? PLAYER_STATE.STUN_DEFENSE : PLAYER_STATE.STUN,
           JUDGMENT_DURATION.ATTACK_FAIL_STUN
         );
-        return;
       }
+      return;
     }
 
-    // 4) 방어에 막히지 않은 공격 판정의 검이 상대 머리에 닿으면 피격(HIT) 및 맞은 방향 흔들림 정보 부여
-    if (s1 === PLAYER_STATE.ATTACK && !p1.attackHasHit && impactOnP2) {
+    // 4) 방어 상태가 아니거나 방어 각도/선분길이 조건을 만족하지 못한 경우에만 머리 히트박스 피격(HIT) 판정
+    //    때리면 앞으로 전진하고 맞으면 뒤로 밀려남 (balance: P1 적중 시 +1, P2 적중 시 -1, ±3 도달 시 승패 결정)
+    if (s1 === PLAYER_STATE.ATTACK && !p1.attackHasHit && !p2BlockedByAngle && impactOnP2) {
       p1.attackHasHit = true;
       p2.hitImpact = impactOnP2;
       setPlayerState(p2, PLAYER_STATE.HIT, JUDGMENT_DURATION.ATTACK_SUCCESS_HIT);
+      setState.balance = Math.min(setState.maxSteps, setState.balance + 1);
+      if (setState.balance >= setState.maxSteps) {
+        setState.phase = 'RESULT';
+        setState.winner = 'PLAYER_1';
+        setState.resultTimer = SET_RESULT_DISPLAY_SEC;
+      }
     }
 
-    if (s2 === PLAYER_STATE.ATTACK && !p2.attackHasHit && impactOnP1) {
+    if (s2 === PLAYER_STATE.ATTACK && !p2.attackHasHit && !p1BlockedByAngle && impactOnP1 && !setState.winner) {
       p2.attackHasHit = true;
       p1.hitImpact = impactOnP1;
       setPlayerState(p1, PLAYER_STATE.HIT, JUDGMENT_DURATION.ATTACK_SUCCESS_HIT);
+      setState.balance = Math.max(-setState.maxSteps, setState.balance - 1);
+      if (setState.balance <= -setState.maxSteps) {
+        setState.phase = 'RESULT';
+        setState.winner = 'PLAYER_2';
+        setState.resultTimer = SET_RESULT_DISPLAY_SEC;
+      }
     }
   }
 
   // 2. 값에 반응해 상태를 갱신하기
   function updateState(sensorData = new Map(), dt = 1 / TICK_RATE) {
+    // 세트 준비(READY) 단계: 참여 중인 플레이어가 모두 볼륨 업 키(button === 1)를 눌러 정렬을 완료하면 게임 시작
+    if (setState.phase === 'READY') {
+      const connectedIds = currentPlayers
+        .map((p) => p.id)
+        .filter((id) => id === 'PLAYER_1' || id === 'PLAYER_2');
+      const requiredIds = connectedIds.length > 0 ? connectedIds : ['PLAYER_1', 'PLAYER_2'];
+      if (requiredIds.every((id) => setState.ready[id])) {
+        setState.phase = 'PLAYING';
+        for (const player of Object.values(playerData)) {
+          setPlayerState(player, PLAYER_STATE.IDLE, 0, { force: true });
+          player.attackCooldown = 0.25;
+          player.attackTriggerStreak = 0;
+        }
+      } else {
+        for (const player of Object.values(playerData)) {
+          setPlayerState(player, PLAYER_STATE.IDLE, 0, { force: true });
+        }
+        resolveCombat(playerData.PLAYER_1, playerData.PLAYER_2);
+        return;
+      }
+    }
+
+    // 세트 결과(WIN/LOSE) 표시 타이머 차감 -> 만료 시 중앙 원래 자리 및 다음 세트 준비 단계로 초기화
+    if (setState.resultTimer > 0) {
+      setState.resultTimer = Math.max(0, Number((setState.resultTimer - dt).toFixed(4)));
+      if (setState.resultTimer <= 0) {
+        resetSetState();
+        return;
+      }
+    }
+
     for (const [playerId, player] of Object.entries(playerData)) {
+      // 0) 공격 후 쿨다운(후딜레이) 차감
+      if (player.attackCooldown > 0) {
+        player.attackCooldown = Math.max(0, Number((player.attackCooldown - dt).toFixed(4)));
+      }
+
       // 1) 상태유지시간(stateDuration)이 남아있으면 시간 차감
       if (player.stateDuration > 0) {
         player.stateDuration = Math.max(0, Number((player.stateDuration - dt).toFixed(4)));
         if (player.stateDuration <= 0) {
+          // 방법 2: 공격(ATTACK)이 자연 종료되면 회수 반동으로 인한 연속 오인식 공격을 막기 위해 쿨다운 부여
+          if (player.state === PLAYER_STATE.ATTACK && attackCooldownDuration > 0) {
+            player.attackCooldown = attackCooldownDuration;
+          }
           // 유지시간이 0 이하로 만료되면 기본상태(또는 방어 유지 시 방어)로 복귀
           const fallbackState = player.button === 1 ? PLAYER_STATE.DEFENSE : PLAYER_STATE.IDLE;
           setPlayerState(player, fallbackState, 0, { force: true });
@@ -1299,7 +1553,7 @@
 
       // 3) 센서 입력 동작(기본=0, 공격=10, 방어=10) 반영:
       //    - 유지시간이 0 이하일 때는 자유롭게 전환 (공격 판정 발생 시 ATTACK 유지시간 부여)
-      //    - 유지시간이 남아있을 때는 위계 비교(canOverrideState)를 통과하는 경우에만 덮어씀
+      //    - 방법 2: 이미 ATTACK 유지시간이 남아있을 때는 ATTACK을 다시 덮어써 유지시간이 무한 연장되지 않도록 차단
       if (sensorData && sensorData.has(playerId)) {
         const inputAction = detectInputAction(player);
         const actionDuration = inputAction === PLAYER_STATE.ATTACK
@@ -1307,7 +1561,7 @@
           : (STATE_DURATION[inputAction] || 0);
         if (player.stateDuration <= 0) {
           setPlayerState(player, inputAction, actionDuration, { force: true });
-        } else {
+        } else if (!(player.state === PLAYER_STATE.ATTACK && inputAction === PLAYER_STATE.ATTACK)) {
           setPlayerState(player, inputAction, actionDuration);
         }
       }
@@ -1357,6 +1611,7 @@
     active = true;
     currentPlayers = players;
     currentRates = rates;
+    resetSetState();
     root.InGameFront?.start(() => stop());
     tick();
     startLoop();
@@ -1366,6 +1621,7 @@
     active = false;
     stopLoop();
     sensorBuffer.clear();
+    resetSetState();
     root.InGameFront?.stop();
   }
 
@@ -1389,6 +1645,9 @@
     ATTACK_ANGULAR_THRESHOLD,
     zeroCalibration,
     playerData,
+    setState,
+    getSetState,
+    resetSetState,
     start,
     stop,
     onSensorData,
@@ -1409,6 +1668,14 @@
     getDefenseSwordOffset,
     setDefenseAngleThreshold,
     getDefenseAngleThreshold,
+    setDefenseMinSegmentLength,
+    getDefenseMinSegmentLength,
+    setAttackCooldownDuration,
+    getAttackCooldownDuration,
+    setSensorTiltSmoothing,
+    getSensorTiltSmoothing,
+    setAttackRotationDamping,
+    getAttackRotationDamping,
     computeFrontalSwordAngleDeg,
     setStunCircleRadius,
     getStunCircleRadius,

@@ -25,6 +25,7 @@ function createServer({ transport = 'p2p', publicBaseUrl = '',
     ['/Graphic/Arm.js', ['../PC/Graphic/Arm.js', 'text/javascript']],
     ['/Graphic/Head.js', ['../PC/Graphic/Head.js', 'text/javascript']],
     ['/Graphic/Sword.js', ['../PC/Graphic/Sword.js', 'text/javascript']],
+    ['/Graphic/ready_pose.png', ['../PC/Graphic/ready_pose.png', 'image/png']],
     ['/inGameDev.js', ['../PC/inGameDev.js', 'text/javascript']],
     ['/inGameFront.js', ['../PC/inGameFront.js', 'text/javascript']],
     ['/inGameBack.js', ['../PC/inGameBack.js', 'text/javascript']],
@@ -49,7 +50,8 @@ function createServer({ transport = 'p2p', publicBaseUrl = '',
     if (!file) { res.writeHead(404).end(); return; }
     try {
       const data = await readFile(path.join(__dirname, file[0]));
-      res.writeHead(200, { 'Content-Type': `${file[1]}; charset=utf-8`,
+      const contentType = file[1].startsWith('image/') ? file[1] : `${file[1]}; charset=utf-8`;
+      res.writeHead(200, { 'Content-Type': contentType,
         'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       res.end(req.method === 'HEAD' ? undefined : data);
     } catch (error) {

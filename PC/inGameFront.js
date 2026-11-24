@@ -18,11 +18,12 @@
   let currentSelfHeadOpacity = 0.35;
   let currentArmOpacity = 1.0;
   let currentHeadOffsetZ = 0.0;
-  let currentHeadHitboxSize = { x: 0.88, y: 0.88, z: 0.88 };
+  let currentHeadHitboxSize = { x: 0.88, y: 0.88, yUp: 0.0, z: 0.88 };
   let currentAttackArmExtension = 0.65;
   let currentDefenseSwordOffset = 1.2;
   let currentDefenseAngleThreshold = 35;
   let currentStunCircleRadius = 0.55;
+  let currentArenaShiftX = 0;
   const STUN_CAMERA_PULLBACK_MAX = 0.55;
   const HIT_CAMERA_PULLBACK_MAX = 1.0;
   const cameraShakeOffsets = {
@@ -46,11 +47,11 @@
 
     const p1Group = playerGroups.get('PLAYER_1');
     if (p1Group?.position?.set) {
-      p1Group.position.set(-halfDist, 1.1, 0);
+      p1Group.position.set(-halfDist + currentArenaShiftX, 1.1, 0);
     }
     const p2Group = playerGroups.get('PLAYER_2');
     if (p2Group?.position?.set) {
-      p2Group.position.set(halfDist, 1.1, 0);
+      p2Group.position.set(halfDist + currentArenaShiftX, 1.1, 0);
     }
 
     const shake1 = cameraShakeOffsets.PLAYER_1 || { x: 0, y: 0, z: 0 };
@@ -58,14 +59,14 @@
     const stunBack1 = Number(cameraStunPullbacks.PLAYER_1) || 0;
     const stunBack2 = Number(cameraStunPullbacks.PLAYER_2) || 0;
 
-    // 카메라 시선 각도(pitch)를 일정하게 유지하고 피격 시 카메라 위치와 시선(lookAt) 모두 피격 방향으로 이동/회전하며, 기절/피격 시 뒤로 밀려남
+    // 카메라 시선 각도(pitch)를 일정하게 유지하고 세트 밀어내기(currentArenaShiftX), 피격 이동(shake), 후방 밀림(stunBack)을 반영
     if (cameraP1) {
-      const cam1X = -halfDist - currentCameraBackOffset - stunBack1;
+      const cam1X = -halfDist + currentArenaShiftX - currentCameraBackOffset - stunBack1;
       cameraP1.position?.set(cam1X + shake1.x, currentCameraHeight + shake1.y, shake1.z);
       cameraP1.lookAt?.(cam1X + CAMERA_LOOK_FORWARD + shake1.x * 1.8, 1.1 + shake1.y * 2.2, shake1.z * 2.2);
     }
     if (cameraP2) {
-      const cam2X = halfDist + currentCameraBackOffset + stunBack2;
+      const cam2X = halfDist + currentArenaShiftX + currentCameraBackOffset + stunBack2;
       cameraP2.position?.set(cam2X + shake2.x, currentCameraHeight + shake2.y, shake2.z);
       cameraP2.lookAt?.(cam2X - CAMERA_LOOK_FORWARD + shake2.x * 1.8, 1.1 + shake2.y * 2.2, shake2.z * 2.2);
     }
@@ -136,6 +137,12 @@
       const val = Number(updates[axis]);
       if (Number.isFinite(val) && val > 0) {
         currentHeadHitboxSize[axis] = val;
+      }
+    }
+    if (updates.yUp !== undefined) {
+      const yUpVal = Number(updates.yUp);
+      if (Number.isFinite(yUpVal)) {
+        currentHeadHitboxSize.yUp = yUpVal;
       }
     }
     root.InGameDev?.renderFrontalSwordHud?.(receivedPlayerInfo);
@@ -644,6 +651,79 @@
     }
   }
 
+  function renderSetUI() {
+    const setInfo = root.InGameBack?.getSetState?.();
+    if (!setInfo) return;
+
+    // 1) 세트 밀어내기 위치 부드럽게 보간 (때리면 앞으로 전진, 맞으면 뒤로 후퇴, 리셋 시 중앙으로 복귀)
+    const targetShiftX = (Number(setInfo.balance) || 0) * (Number(setInfo.stepDistance) || 1.1);
+    const diff = targetShiftX - currentArenaShiftX;
+    if (Math.abs(diff) < 0.004) {
+      currentArenaShiftX = targetShiftX;
+    } else {
+      currentArenaShiftX += diff * 0.16;
+    }
+    applyPlayerDistanceLayout(currentPlayerDistance);
+
+    // 2) 패배까지 한 대 남았을 때(balance === -(maxSteps - 1) -> P1 경고, +(maxSteps - 1) -> P2 경고) 화면 하단 빨간 경고 표시
+    const warnThreshold = Math.max(1, (Number(setInfo.maxSteps) || 3) - 1);
+    const p1Danger = !setInfo.winner && setInfo.balance <= -warnThreshold;
+    const p2Danger = !setInfo.winner && setInfo.balance >= warnThreshold;
+    if ($('p1-danger-glow')) $('p1-danger-glow').hidden = !p1Danger;
+    if ($('p2-danger-glow')) $('p2-danger-glow').hidden = !p2Danger;
+
+    // 3) 세트 시작 준비(영점 정렬) 안내 오버레이 표시
+    const isReadyPhase = setInfo.phase === 'READY';
+    const p1ReadyOverlay = $('p1-ready-overlay');
+    const p2ReadyOverlay = $('p2-ready-overlay');
+    if (p1ReadyOverlay) p1ReadyOverlay.hidden = !isReadyPhase;
+    if (p2ReadyOverlay) p2ReadyOverlay.hidden = !isReadyPhase;
+    if (isReadyPhase) {
+      const p1Done = Boolean(setInfo.ready?.PLAYER_1);
+      const p2Done = Boolean(setInfo.ready?.PLAYER_2);
+      const p1Status = $('p1-ready-status');
+      const p2Status = $('p2-ready-status');
+      if (p1Status) {
+        p1Status.textContent = p1Done ? '준비 완료! 상대방 대기 중...' : '볼륨 업 키 입력 대기 중...';
+        p1Status.className = p1Done ? 'ready-status is-ready' : 'ready-status';
+      }
+      if (p2Status) {
+        p2Status.textContent = p2Done ? '준비 완료! 상대방 대기 중...' : '볼륨 업 키 입력 대기 중...';
+        p2Status.className = p2Done ? 'ready-status is-ready' : 'ready-status';
+      }
+    }
+
+    // 4) 세트 승패 시 양쪽 화면에 WIN / LOSE 배너 표시
+    const p1Banner = $('p1-set-result');
+    const p2Banner = $('p2-set-result');
+    if (setInfo.winner === 'PLAYER_1') {
+      if (p1Banner) {
+        p1Banner.textContent = 'WIN';
+        p1Banner.className = 'split-result-banner split-result-left is-win';
+        p1Banner.hidden = false;
+      }
+      if (p2Banner) {
+        p2Banner.textContent = 'LOSE';
+        p2Banner.className = 'split-result-banner split-result-right is-lose';
+        p2Banner.hidden = false;
+      }
+    } else if (setInfo.winner === 'PLAYER_2') {
+      if (p1Banner) {
+        p1Banner.textContent = 'LOSE';
+        p1Banner.className = 'split-result-banner split-result-left is-lose';
+        p1Banner.hidden = false;
+      }
+      if (p2Banner) {
+        p2Banner.textContent = 'WIN';
+        p2Banner.className = 'split-result-banner split-result-right is-win';
+        p2Banner.hidden = false;
+      }
+    } else {
+      if (p1Banner) p1Banner.hidden = true;
+      if (p2Banner) p2Banner.hidden = true;
+    }
+  }
+
   function updateGraphics(playerData) {
     if (!playerData || typeof playerData !== 'object') return;
     for (const [playerId, info] of Object.entries(playerData)) {
@@ -652,6 +732,7 @@
       }
       updatePose(playerId, info);
     }
+    renderSetUI();
     root.InGameDev?.renderFrontalSwordHud?.(receivedPlayerInfo);
     renderSplitView();
   }
