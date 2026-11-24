@@ -65,7 +65,8 @@ p2p:   앱 ─JOIN_ROOM→ 서버 ─JOIN_SUCCESS→ 앱
 - [x] relay 모드 (WebSocket)
 - [x] p2p 모드 (WebRTC DataChannel), 15초 안에 연결 안 되면 실패 처리
 - [x] `ERROR` 처리 (입장 실패 시 연결 화면 복귀, 게임 중에는 알림), `ROOM_CLOSED` 처리
-- [x] 볼륨 키 → button 0/1/2
+- [x] 볼륨 키 → button 0/1/2 (볼륨 하 = 방어 1, 볼륨 상 = 검 정렬 2)
+- [x] 인게임과 맞춘 테마 (보랏빛 우주 배경, 로우폴리 소품, 1P 민트 / 2P 피치). 시안: `design/theme-mockup-v2.1.png`
 - [x] 영점 화면 제거 (영점은 PC에서 처리, `GAME_START` 받으면 바로 게임 화면)
 - [x] 입장·QR 스캔 시 키패드 내림, PIN 입력 후 키패드 '이동'으로 바로 입장
 - [ ] 진동 피드백, 게임 종료 처리 (PC → 앱 메시지가 아직 없음)
@@ -73,5 +74,5 @@ p2p:   앱 ─JOIN_ROOM→ 서버 ─JOIN_SUCCESS→ 앱
 ## 팀 확인이 필요한 항목
 
 1. 타격·방어·게임 종료를 앱에 알려줄 메시지 (진동 피드백용)
-2. 볼륨 키 두 개 동시 입력 → 현재 방어(1) 우선
+2. 볼륨 키 두 개 동시 입력 → 현재 방어(1) 우선 (정렬보다 막기가 먼저)
 3. 각속도 전송 여부 → `Config.INCLUDE_ANGULAR_VELOCITY` (기본 false)

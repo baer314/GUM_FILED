@@ -1,3 +1,132 @@
 <resources>
-    <style name="Theme.GumController" parent="Theme.Material3.DayNight.NoActionBar" />
+    <!-- 게임 화면에 맞춰 항상 어두운 테마 -->
+    <style name="Theme.GumController" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/gum_gold</item>
+        <item name="colorOnPrimary">@color/gum_on_gold</item>
+        <item name="colorSecondary">@color/gum_p1</item>
+        <item name="android:colorBackground">@color/gum_sky_top</item>
+        <item name="android:windowBackground">@color/gum_sky_top</item>
+        <item name="android:statusBarColor">@color/gum_sky_top</item>
+        <item name="android:navigationBarColor">@color/gum_deck_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:textColorPrimary">@color/gum_text</item>
+        <item name="android:textColorSecondary">@color/gum_text_dim</item>
+        <item name="android:textColorHint">@color/gum_hint</item>
+    </style>
+
+    <!-- 장난감처럼 두툼한 버튼 (아래 그림자). AppCompatButton에 써야 배경이 틴트되지 않는다 -->
+    <style name="Gum.Button" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">60dp</item>
+        <item name="android:layout_marginTop">12dp</item>
+        <item name="android:paddingBottom">6dp</item>
+        <item name="android:textSize">17sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:gravity">center</item>
+    </style>
+    <style name="Gum.Button.Gold">
+        <item name="android:background">@drawable/btn_gold</item>
+        <item name="android:textColor">@color/gum_on_gold</item>
+    </style>
+    <style name="Gum.Button.Mint">
+        <item name="android:background">@drawable/btn_mint</item>
+        <item name="android:textColor">@color/gum_on_p1</item>
+    </style>
+    <style name="Gum.Button.Dark">
+        <item name="android:layout_height">48dp</item>
+        <item name="android:paddingBottom">0dp</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:background">@drawable/btn_dark</item>
+        <item name="android:textColor">@color/gum_text</item>
+    </style>
+    <style name="Gum.Button.Ghost">
+        <item name="android:layout_height">44dp</item>
+        <item name="android:layout_marginTop">6dp</item>
+        <item name="android:paddingBottom">0dp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">normal</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:textColor">@color/gum_text_dim</item>
+    </style>
+
+    <!-- 입력 카드 -->
+    <style name="Gum.Card" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginBottom">10dp</item>
+        <item name="android:background">@drawable/bg_card</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">8dp</item>
+    </style>
+    <style name="Gum.FieldLabel" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.06</item>
+        <item name="android:textColor">@color/gum_text_dim</item>
+    </style>
+    <style name="Gum.Field" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@null</item>
+        <item name="android:paddingTop">2dp</item>
+        <item name="android:paddingBottom">2dp</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textColor">@color/gum_text</item>
+        <item name="android:textColorHint">@color/gum_hint</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <!-- PLAYER 1 / PLAYER 2 알약 라벨 -->
+    <style name="Gum.Pill" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:paddingTop">7dp</item>
+        <item name="android:paddingBottom">7dp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.16</item>
+        <item name="android:background">@drawable/bg_pill_p1</item>
+        <item name="android:textColor">@color/gum_p1</item>
+    </style>
+
+    <!-- 볼륨 키 안내 칩 -->
+    <style name="Gum.KeyChip" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">4dp</item>
+        <item name="android:layout_marginEnd">4dp</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/gum_text</item>
+        <item name="android:background">@drawable/bg_key</item>
+    </style>
+
+    <!-- 센서값 칸 -->
+    <style name="Gum.SensorCell" parent="">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_marginStart">3dp</item>
+        <item name="android:layout_marginEnd">3dp</item>
+        <item name="android:paddingTop">5dp</item>
+        <item name="android:paddingBottom">5dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/gum_text</item>
+        <item name="android:background">@drawable/bg_cell</item>
+    </style>
 </resources>

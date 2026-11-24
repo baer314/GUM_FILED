@@ -1,121 +1,220 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 화면 3개를 한 레이아웃에 두고 visibility로 전환한다 (MainActivity.show) -->
+<!--
+    화면 3개를 한 레이아웃에 두고 visibility로 전환한다 (MainActivity.show).
+    맨 뒤에는 인게임과 같은 우주 배경(SpaceBackgroundView)이 깔린다.
+    시안: APP/design/theme-mockup-v2.1.png
+-->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/gum_sky_top"
     android:fitsSystemWindows="true"
     android:keepScreenOn="true">
 
-    <!-- 1. 연결 화면 -->
-    <LinearLayout
+    <com.gumfiled.controller.ui.SpaceBackgroundView
+        android:id="@+id/spaceBg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- 1. 연결 화면 (키패드가 올라와도 가려지지 않게 스크롤) -->
+    <ScrollView
         android:id="@+id/panelConnect"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:gravity="center_vertical"
-        android:orientation="vertical"
-        android:padding="24dp">
+        android:fillViewport="true">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="24dp"
-            android:text="@string/app_name"
-            android:textSize="28sp"
-            android:textStyle="bold" />
-
-        <EditText
-            android:id="@+id/etServer"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="@string/hint_server"
-            android:importantForAutofill="no"
-            android:inputType="textUri" />
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:paddingStart="24dp"
+            android:paddingTop="12dp"
+            android:paddingEnd="24dp"
+            android:paddingBottom="64dp">
 
-        <EditText
-            android:id="@+id/etPin"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="@string/hint_pin"
-            android:imeOptions="actionGo"
-            android:importantForAutofill="no"
-            android:inputType="textCapCharacters" />
+            <com.gumfiled.controller.ui.OrbView
+                android:id="@+id/orbLogo"
+                android:layout_width="150dp"
+                android:layout_height="150dp"
+                android:layout_gravity="center_horizontal" />
 
-        <Button
-            android:id="@+id/btnScan"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/btn_scan" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:shadowColor="#40000000"
+                android:shadowDy="4"
+                android:shadowRadius="1"
+                android:text="@string/app_name"
+                android:textColor="@color/gum_text"
+                android:textSize="30sp"
+                android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/btnJoin"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/btn_join" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="22dp"
+                android:letterSpacing="0.34"
+                android:text="@string/app_tag"
+                android:textColor="@color/gum_text_dim"
+                android:textSize="11sp" />
 
-        <Button
-            android:id="@+id/btnSensorTest"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/btn_sensor_test" />
+            <LinearLayout style="@style/Gum.Card">
 
-        <TextView
-            android:id="@+id/tvConnectStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:textSize="14sp" />
+                <TextView
+                    style="@style/Gum.FieldLabel"
+                    android:text="@string/label_server" />
 
-        <TextView
-            android:id="@+id/tvSensorWarning"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textColor="#D32F2F"
-            android:textSize="14sp"
-            android:visibility="gone" />
-    </LinearLayout>
+                <EditText
+                    android:id="@+id/etServer"
+                    style="@style/Gum.Field"
+                    android:hint="@string/hint_server"
+                    android:importantForAutofill="no"
+                    android:inputType="textUri" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/Gum.Card">
+
+                <TextView
+                    style="@style/Gum.FieldLabel"
+                    android:text="@string/label_pin" />
+
+                <EditText
+                    android:id="@+id/etPin"
+                    style="@style/Gum.Field"
+                    android:fontFamily="monospace"
+                    android:hint="@string/hint_pin"
+                    android:imeOptions="actionGo"
+                    android:importantForAutofill="no"
+                    android:inputType="textCapCharacters"
+                    android:letterSpacing="0.3"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnScan"
+                style="@style/Gum.Button.Gold"
+                android:text="@string/btn_scan" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnJoin"
+                style="@style/Gum.Button.Mint"
+                android:text="@string/btn_join" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnSensorTest"
+                style="@style/Gum.Button.Ghost"
+                android:text="@string/btn_sensor_test" />
+
+            <TextView
+                android:id="@+id/tvConnectStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:textColor="@color/gum_text_dim"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvSensorWarning"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:textColor="@color/gum_warning"
+                android:textSize="13sp"
+                android:visibility="gone" />
+        </LinearLayout>
+    </ScrollView>
 
     <!-- 2. 대기 화면 (JOIN_SUCCESS 이후, GAME_START 전) -->
     <LinearLayout
         android:id="@+id/panelWaiting"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:gravity="center"
         android:orientation="vertical"
         android:padding="24dp"
         android:visibility="gone">
 
         <TextView
             android:id="@+id/tvWaitingPlayer"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="32sp"
-            android:textStyle="bold" />
+            style="@style/Gum.Pill"
+            tools:text="PLAYER 1" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/waiting_title"
-            android:textSize="18sp" />
-
-        <TextView
-            android:id="@+id/tvWaitingNote"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
             android:gravity="center"
-            android:textSize="13sp" />
+            android:orientation="vertical">
 
-        <Button
+            <com.gumfiled.controller.ui.OrbView
+                android:id="@+id/orbWaiting"
+                android:layout_width="240dp"
+                android:layout_height="240dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:shadowColor="#40000000"
+                android:shadowDy="4"
+                android:shadowRadius="1"
+                android:text="@string/waiting_title"
+                android:textColor="@color/gum_text"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvWaitingNote"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center"
+                android:textColor="@color/gum_text_dim"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:background="@drawable/bg_tip"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:paddingStart="18dp"
+                android:paddingTop="12dp"
+                android:paddingEnd="18dp"
+                android:paddingBottom="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:letterSpacing="0.2"
+                    android:text="@string/waiting_tip_title"
+                    android:textColor="@color/gum_gold"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:gravity="center"
+                    android:lineSpacingExtra="3dp"
+                    android:text="@string/waiting_tip"
+                    android:textColor="@color/gum_text"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <androidx.appcompat.widget.AppCompatButton
             android:id="@+id/btnLeaveWaiting"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="32dp"
+            style="@style/Gum.Button.Dark"
             android:text="@string/btn_leave" />
     </LinearLayout>
 
@@ -124,46 +223,131 @@
         android:id="@+id/panelPlaying"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:gravity="center"
         android:orientation="vertical"
         android:padding="24dp"
         android:visibility="gone">
 
-        <TextView
-            android:id="@+id/tvPlayPlayer"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="18sp" />
-
-        <TextView
-            android:id="@+id/tvButtonState"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:textSize="40sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/play_hint"
-            android:textSize="14sp" />
-
-        <TextView
-            android:id="@+id/tvSensor"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="32dp"
-            android:fontFamily="monospace"
-            android:textSize="12sp" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <Button
+            <TextView
+                android:id="@+id/tvPlayPlayer"
+                style="@style/Gum.Pill"
+                tools:text="PLAYER 1" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/tvLink"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_key"
+                android:paddingStart="10dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="6dp"
+                android:textColor="@color/gum_text_dim"
+                android:textSize="11sp"
+                tools:text="직접 연결 · 60/s" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <com.gumfiled.controller.ui.OrbView
+                android:id="@+id/orbPlay"
+                android:layout_width="250dp"
+                android:layout_height="250dp"
+                android:layout_marginTop="8dp" />
+
+            <TextView
+                android:id="@+id/tvButtonState"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.1"
+                android:shadowColor="#48000000"
+                android:shadowDy="5"
+                android:shadowRadius="1"
+                android:textSize="42sp"
+                android:textStyle="bold"
+                tools:text="방어" />
+
+            <TextView
+                android:id="@+id/tvStateHint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/gum_text_dim"
+                android:textSize="13sp"
+                tools:text="누르고 있는 동안 막아요" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/chipAlign"
+                    style="@style/Gum.KeyChip"
+                    android:text="@string/key_align" />
+
+                <TextView
+                    android:id="@+id/chipDefend"
+                    style="@style/Gum.KeyChip"
+                    android:text="@string/key_defend" />
+            </LinearLayout>
+
+            <!-- 자세 쿼터니언 x y z w -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/tvRotX"
+                    style="@style/Gum.SensorCell" />
+
+                <TextView
+                    android:id="@+id/tvRotY"
+                    style="@style/Gum.SensorCell" />
+
+                <TextView
+                    android:id="@+id/tvRotZ"
+                    style="@style/Gum.SensorCell" />
+
+                <TextView
+                    android:id="@+id/tvRotW"
+                    style="@style/Gum.SensorCell" />
+            </LinearLayout>
+
+            <!-- 센서 테스트 모드에서만 보이는 상세값 -->
+            <TextView
+                android:id="@+id/tvSensor"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_cell"
+                android:fontFamily="monospace"
+                android:padding="8dp"
+                android:textColor="@color/gum_text"
+                android:textSize="11sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <androidx.appcompat.widget.AppCompatButton
             android:id="@+id/btnLeavePlaying"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="32dp"
+            style="@style/Gum.Button.Dark"
             android:text="@string/btn_leave" />
     </LinearLayout>
 </FrameLayout>

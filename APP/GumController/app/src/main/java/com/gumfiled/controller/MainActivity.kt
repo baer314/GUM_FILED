@@ -17,6 +17,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.gumfiled.controller.databinding.ActivityMainBinding
 import com.gumfiled.controller.net.JoinInfo
 import com.gumfiled.controller.net.Packet
@@ -24,6 +25,9 @@ import com.gumfiled.controller.net.RtcClient
 import com.gumfiled.controller.net.WsClient
 import com.gumfiled.controller.sensor.SensorSampler
 import com.gumfiled.controller.sensor.SensorStreamer
+import com.gumfiled.controller.ui.GumArt
+import com.gumfiled.controller.ui.OrbView
+import com.gumfiled.controller.ui.SpaceBackgroundView
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import org.json.JSONObject
@@ -32,7 +36,7 @@ import java.util.Locale
 /**
  * 화면 흐름
  *   CONNECT ──JOIN_SUCCESS──▶ WAITING ──GAME_START──▶ PLAYING
- * 영점은 PC에서 처리하므로 앱에는 영점 화면이 없다.
+ * 영점은 PC에서 처리하므로 앱에는 영점 화면이 없다. 게임 중 볼륨 상을 누르면 PC가 검을 다시 정렬한다.
  * GAME_START 이후 SENSOR 패킷을 계속 보낸다.
  *
  * 전송 방식은 서버가 JOIN_SUCCESS.transport로 알려준다.
@@ -325,13 +329,13 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
     }
 
     /**
-     * 규격: 0 입력 없음, 1 볼륨 상(방어), 2 볼륨 하(강타 충전)
-     * 둘 다 누르면 방어 우선 (규격 미정 → 팀 확인 필요)
+     * 키 배치: 볼륨 하 = 방어(1), 볼륨 상 = 검 정렬(2). 값의 의미는 Packet.BUTTON_* 참고.
+     * 둘 다 누르면 방어 우선 (정렬 중에 막지 못하면 위험하므로)
      */
     private fun currentButton(): Int = when {
-        volumeUpHeld -> 1
-        volumeDownHeld -> 2
-        else -> 0
+        volumeDownHeld -> Packet.BUTTON_DEFEND
+        volumeUpHeld -> Packet.BUTTON_ALIGN
+        else -> Packet.BUTTON_NONE
     }
 
     private fun gameScreen() = screen == Screen.PLAYING
@@ -340,8 +344,13 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
         if (gameScreen()) {
             when (keyCode) {
                 // true를 돌려줘야 실제 볼륨이 바뀌지 않는다
-                KeyEvent.KEYCODE_VOLUME_UP -> { volumeUpHeld = true; return true }
-                KeyEvent.KEYCODE_VOLUME_DOWN -> { volumeDownHeld = true; return true }
+                KeyEvent.KEYCODE_VOLUME_UP -> {
+                    if (event.repeatCount == 0) vibrate(30) // 검 정렬 확인용
+                    volumeUpHeld = true
+                    renderButtonState()
+                    return true
+                }
+                KeyEvent.KEYCODE_VOLUME_DOWN -> { volumeDownHeld = true; renderButtonState(); return true }
             }
         }
         return super.onKeyDown(keyCode, event)
@@ -350,8 +359,8 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         if (gameScreen()) {
             when (keyCode) {
-                KeyEvent.KEYCODE_VOLUME_UP -> { volumeUpHeld = false; return true }
-                KeyEvent.KEYCODE_VOLUME_DOWN -> { volumeDownHeld = false; return true }
+                KeyEvent.KEYCODE_VOLUME_UP -> { volumeUpHeld = false; renderButtonState(); return true }
+                KeyEvent.KEYCODE_VOLUME_DOWN -> { volumeDownHeld = false; renderButtonState(); return true }
             }
         }
         return super.onKeyUp(keyCode, event)
@@ -366,13 +375,67 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
         binding.panelPlaying.visibility = if (target == Screen.PLAYING) View.VISIBLE else View.GONE
         binding.btnJoin.isEnabled = target == Screen.CONNECT
 
-        val label = when {
-            testMode -> "센서 테스트 모드 (전송 안 함)"
-            playerId == null -> ""
-            else -> "$playerId · ${if (isP2p()) "직접 연결" else "서버 중계"}"
+        // 플레이어 색: 1P 민트, 2P 피치 (PC 화면과 같다)
+        val p2 = isPlayer2()
+        val pillText = if (testMode) "TEST" else playerId.orEmpty().replace('_', ' ')
+        for (pill in listOf(binding.tvWaitingPlayer, binding.tvPlayPlayer)) {
+            pill.text = pillText
+            pill.setBackgroundResource(if (p2) R.drawable.bg_pill_p2 else R.drawable.bg_pill_p1)
+            pill.setTextColor(color(if (p2) R.color.gum_p2_label else R.color.gum_p1))
         }
-        binding.tvWaitingPlayer.text = playerId.orEmpty()
-        binding.tvPlayPlayer.text = label
+        binding.spaceBg.setScene(
+            when (target) {
+                Screen.CONNECT -> SpaceBackgroundView.Scene.CONNECT
+                Screen.WAITING -> SpaceBackgroundView.Scene.WAITING
+                Screen.PLAYING -> SpaceBackgroundView.Scene.PLAYING
+            },
+            player2 = p2,
+            hiltColor = myColor(),
+        )
+        binding.orbLogo.mode = OrbView.Mode.LOGO
+        binding.orbWaiting.mode = OrbView.Mode.WAITING
+        binding.orbWaiting.myColor = myColor()
+        binding.orbPlay.myColor = myColor()
+        binding.orbPlay.foeColor = if (p2) GumArt.P1 else GumArt.P2
+        binding.tvSensor.visibility = if (testMode) View.VISIBLE else View.GONE
+        renderButtonState()
+    }
+
+    private fun isPlayer2() = playerId == "PLAYER_2"
+
+    private fun myColor() = if (isPlayer2()) GumArt.P2 else GumArt.P1
+
+    private fun color(id: Int) = ContextCompat.getColor(this, id)
+
+    /** 게임 화면 가운데 그림, 상태 글자, 키 안내 칩을 현재 버튼에 맞춘다 */
+    private fun renderButtonState() {
+        if (!gameScreen()) return
+        val button = currentButton()
+        val (mode, text, hint) = when (button) {
+            Packet.BUTTON_DEFEND -> Triple(OrbView.Mode.DEFEND, R.string.state_defend, R.string.state_defend_hint)
+            Packet.BUTTON_ALIGN -> Triple(OrbView.Mode.ALIGN, R.string.state_align, R.string.state_align_hint)
+            else -> Triple(OrbView.Mode.IDLE, R.string.state_idle, R.string.state_idle_hint)
+        }
+        binding.orbPlay.mode = mode
+        binding.tvButtonState.setText(text)
+        binding.tvStateHint.setText(hint)
+        binding.tvButtonState.setTextColor(
+            when (button) {
+                Packet.BUTTON_DEFEND -> myColor()
+                Packet.BUTTON_ALIGN -> GumArt.GOLD
+                else -> color(R.color.gum_text)
+            }
+        )
+        binding.chipAlign.setBackgroundResource(
+            if (button == Packet.BUTTON_ALIGN) R.drawable.bg_key_on_gold else R.drawable.bg_key
+        )
+        binding.chipDefend.setBackgroundResource(
+            when {
+                button != Packet.BUTTON_DEFEND -> R.drawable.bg_key
+                isPlayer2() -> R.drawable.bg_key_on_p2
+                else -> R.drawable.bg_key_on_p1
+            }
+        )
     }
 
     private fun setStatus(text: String) {
@@ -385,6 +448,17 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
         val q = s.rotation
         val a = s.acceleration
         val g = s.angularVelocity
+        binding.tvRotX.text = String.format(Locale.US, "x\n%.2f", q[1])
+        binding.tvRotY.text = String.format(Locale.US, "y\n%.2f", q[2])
+        binding.tvRotZ.text = String.format(Locale.US, "z\n%.2f", q[3])
+        binding.tvRotW.text = String.format(Locale.US, "w\n%.2f", q[0])
+        binding.tvLink.text = when {
+            testMode -> "센서 테스트 · 생성 ${streamer.sentPerSecond}/s"
+            isP2p() -> "직접 연결 · ${streamer.sentPerSecond}/s"
+            else -> "서버 중계 · ${streamer.sentPerSecond}/s"
+        }
+        renderButtonState()
+        if (!testMode) return
         val text = String.format(
             Locale.US,
             "rot  w=%6.3f x=%6.3f y=%6.3f z=%6.3f\n" +
@@ -395,11 +469,6 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
             sampler.rotationRate, if (testMode) "생성" else "전송", streamer.sentPerSecond
         )
         binding.tvSensor.text = text
-        binding.tvButtonState.text = when (currentButton()) {
-            1 -> "방어"
-            2 -> "강타 충전"
-            else -> "대기"
-        }
     }
 
     private fun vibrate(ms: Long) {
