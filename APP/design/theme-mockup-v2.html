@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>GumController Lowpoly Theme v2.1</title>
+<style>
+  :root{
+    --sky-top:#2A2B44; --sky-mid:#4A3658; --sky-low:#6B4E6E;
+    --deck:#7E9FB8; --deck-dark:#5B7790; --deck-line:#A9C4D6;
+    --gold:#F0C04A; --gold-dark:#C9922C;
+    --p1:#7EE3C6; --p1-deep:#3FB596; --p2:#F2A27E; --p2-deep:#D9785A;
+    --pill:#1B2321; --cream:#F4EADF; --text:#F6F2EC; --dim:#C2B8CC;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:40px 44px 44px;background:#16151F;font-family:"Malgun Gothic",system-ui,sans-serif;color:var(--text)}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--dim);font-size:13px;margin:0 0 26px}
+  .row{display:flex;gap:28px}
+  .col{display:flex;flex-direction:column;align-items:center;gap:12px}
+  .cap{font-size:13px;color:var(--dim);letter-spacing:.06em}
+  .phone{position:relative;width:340px;height:720px;border-radius:38px;overflow:hidden;border:6px solid #23212E;
+    background:linear-gradient(180deg,var(--sky-top) 0%,var(--sky-mid) 55%,var(--sky-low) 100%);box-shadow:0 26px 70px rgba(0,0,0,.55)}
+  .phone.p2{background:linear-gradient(180deg,#3A2E4E 0%,#5A3862 55%,#7A5274 100%)}
+  .bg{position:absolute;inset:0}
+  .screen{position:relative;height:100%;padding:52px 24px 26px;display:flex;flex-direction:column;z-index:2}
+  .status{position:absolute;top:13px;left:24px;right:24px;display:flex;justify-content:space-between;font-size:12px;color:var(--dim)}
+
+  .pilltag{align-self:flex-start;padding:7px 16px;border-radius:999px;background:rgba(27,35,33,.88);border:1.5px solid rgba(126,227,198,.35);
+    color:var(--p1);font-weight:800;font-size:12px;letter-spacing:.16em}
+  .pilltag.p2{color:#F0A060;border-color:rgba(240,160,96,.4)}
+  .title{font-size:30px;font-weight:900;letter-spacing:.04em;text-align:center;margin-top:6px;text-shadow:0 3px 0 rgba(0,0,0,.25)}
+  .tag{text-align:center;font-size:11px;letter-spacing:.34em;color:var(--dim);margin:4px 0 22px}
+  .card{background:rgba(27,35,33,.72);border:1.5px solid rgba(255,255,255,.12);border-radius:16px;padding:10px 14px;margin-bottom:10px}
+  .card label{display:block;font-size:11px;color:var(--dim);font-weight:700;letter-spacing:.06em}
+  .card .v{font-size:16px;margin-top:2px;color:#8F8AA3}
+  .card .pin{font:800 22px ui-monospace,Consolas,monospace;letter-spacing:.42em;color:var(--text)}
+  /* 장난감 같은 두꺼운 버튼 (아래 그림자) */
+  .btn{display:flex;align-items:center;justify-content:center;height:54px;border-radius:16px;font-weight:900;font-size:17px;margin-top:12px;letter-spacing:.02em}
+  .btn.gold{background:var(--gold);color:#3A2A12;box-shadow:0 6px 0 var(--gold-dark),0 10px 18px rgba(0,0,0,.3)}
+  .btn.mint{background:var(--p1);color:#103A30;box-shadow:0 6px 0 var(--p1-deep),0 10px 18px rgba(0,0,0,.3)}
+  .btn.ghost{height:40px;font-weight:600;font-size:14px;color:var(--dim);margin-top:8px}
+  .btn.dark{background:rgba(27,35,33,.85);color:var(--text);border:1.5px solid rgba(255,255,255,.14);height:44px;font-size:14px;font-weight:700}
+
+  .center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+  .big{font-size:32px;font-weight:900;margin:16px 0 4px;text-shadow:0 3px 0 rgba(0,0,0,.25)}
+  .dim{font-size:13px;color:var(--dim)}
+  .dots{margin-top:14px}.dots span{display:inline-block;width:10px;height:10px;margin:0 4px;transform:rotate(45deg);background:var(--gold);opacity:.4}
+  .dots span:nth-child(2){opacity:.7}.dots span:nth-child(3){opacity:1}
+
+  .topbar{display:flex;justify-content:space-between;align-items:center}
+  .link{font-size:11px;color:var(--dim);background:rgba(27,35,33,.75);padding:6px 10px;border-radius:8px;display:flex;gap:6px;align-items:center}
+  .link i{width:7px;height:7px;border-radius:2px;background:var(--p1);transform:rotate(45deg)}
+  .state{font-size:44px;font-weight:900;letter-spacing:.1em;margin-top:6px;text-shadow:0 4px 0 rgba(0,0,0,.28)}
+  .keys{display:flex;gap:8px;margin-top:14px}
+  .key{padding:7px 10px;border-radius:10px;background:rgba(27,35,33,.8);border:1px solid rgba(255,255,255,.14);font-size:12px}
+  .key b{display:inline-block;padding:1px 6px;margin-right:6px;border-radius:4px;border:1px solid rgba(255,255,255,.35);font:700 10px ui-monospace,monospace}
+  .key.on1{border-color:var(--p1);color:var(--p1);box-shadow:0 0 12px rgba(126,227,198,.35)}
+  .key.on2{border-color:var(--gold);color:var(--gold);box-shadow:0 0 12px rgba(240,192,74,.35)}
+  .tip{margin-top:26px;padding:12px 14px;border-radius:14px;background:rgba(27,35,33,.75);border:1.5px solid rgba(240,192,74,.35);font-size:13px;line-height:1.6;color:var(--text)}
+  .tip b{display:block;color:var(--gold);font-size:11px;letter-spacing:.2em}
+  .kbd{display:inline-block;padding:0 6px;border-radius:4px;border:1px solid rgba(255,255,255,.4);font:700 11px ui-monospace,monospace}
+  .sensor{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;width:100%;margin-top:14px;font:700 11px ui-monospace,Consolas,monospace}
+  .sensor div{background:rgba(27,35,33,.6);border-radius:8px;padding:5px 0;text-align:center;color:var(--dim)}
+  .sensor span{display:block;color:var(--text)}
+
+  .palette{display:flex;gap:12px;margin-top:30px;flex-wrap:wrap}
+  .sw{width:142px;border-radius:12px;overflow:hidden;font-size:12px;background:#201E2B}
+  .sw div:first-child{height:50px}.sw div:last-child{padding:7px 10px;color:var(--dim)}.sw b{display:block;color:var(--text)}
+</style>
+</head>
+<body>
+<h1>검 컨트롤러 · 인게임 테마 맞춤 시안 v2.1</h1>
+<p class="sub">게임 화면에 맞췄습니다: 보라빛 노을 하늘, 로우폴리 소행성, 고리 행성, 푸른 회색 갑판과 노란 패널, 1P 민트 / 2P 피치. 버튼은 장난감처럼 두툼하게 만들었습니다. <b style="color:#F0C04A">v2.1: 볼륨 ▲ = 검 정렬(영점), 볼륨 ▼ = 방어</b></p>
+
+<div class="row">
+  <!-- 1. 연결 -->
+  <div class="col"><div class="phone"><svg class="bg" data-scene="connect" viewBox="0 0 340 720"></svg>
+    <div class="screen">
+      <div class="status"><span>9:41</span><span>82%</span></div>
+      <div style="height:190px"></div>
+      <div class="title">검 컨트롤러</div>
+      <div class="tag">GUM · FILED</div>
+      <div class="card"><label>서버 주소</label><div class="v">192.168.0.5:8080</div></div>
+      <div class="card"><label>방 PIN</label><div class="v pin">K7Q2</div></div>
+      <div class="btn gold">QR 스캔으로 입장</div>
+      <div class="btn mint">PIN으로 입장</div>
+      <div class="btn ghost">센서 테스트 (서버 없이)</div>
+    </div></div><div class="cap">1 · 연결</div></div>
+
+  <!-- 2. 대기 -->
+  <div class="col"><div class="phone"><svg class="bg" data-scene="wait" viewBox="0 0 340 720"></svg>
+    <div class="screen">
+      <div class="status"><span>9:41</span><span>82%</span></div>
+      <span class="pilltag">PLAYER 1</span>
+      <div class="center" style="justify-content:flex-start;padding-top:230px">
+        <div class="big">대기 중</div>
+        <div class="dim">PC에서 게임을 시작하면 바로 넘어가요</div>
+        <div class="dots"><span></span><span></span><span></span></div>
+        <div class="tip"><b>TIP</b>시작하면 휴대폰을 정면으로 들고<br><span class="kbd">VOL ▲</span> 를 눌러 검을 정렬하세요</div>
+      </div>
+      <div class="btn dark">나가기</div>
+    </div></div><div class="cap">2 · 대기 (1P)</div></div>
+
+  <!-- 3. 게임 1P -->
+  <div class="col"><div class="phone"><svg class="bg" data-scene="play1" viewBox="0 0 340 720"></svg>
+    <div class="screen">
+      <div class="status"><span>9:41</span><span>82%</span></div>
+      <div class="topbar"><span class="pilltag">PLAYER 1</span><span class="link"><i></i>P2P · 60Hz</span></div>
+      <div class="center" style="justify-content:flex-start;padding-top:270px">
+        <div class="state" style="color:var(--p1)">방어</div>
+        <div class="dim">누르고 있는 동안 막아요</div>
+        <div class="keys"><div class="key"><b>VOL ▲</b>검 정렬</div><div class="key on1"><b>VOL ▼</b>방어</div></div>
+        <div class="sensor"><div>x<span>0.12</span></div><div>y<span>-0.41</span></div><div>z<span>0.07</span></div><div>w<span>0.90</span></div></div>
+      </div>
+      <div class="btn dark">나가기</div>
+    </div></div><div class="cap">3 · 게임 1P (방어)</div></div>
+
+  <!-- 4. 게임 2P -->
+  <div class="col"><div class="phone p2"><svg class="bg" data-scene="play2" viewBox="0 0 340 720"></svg>
+    <div class="screen">
+      <div class="status"><span>9:41</span><span>82%</span></div>
+      <div class="topbar"><span class="pilltag p2">PLAYER 2</span><span class="link"><i style="background:var(--p2)"></i>P2P · 60Hz</span></div>
+      <div class="center" style="justify-content:flex-start;padding-top:270px">
+        <div class="state" style="color:var(--gold)">검 정렬</div>
+        <div class="dim">지금 방향이 정면이 됐어요</div>
+        <div class="keys"><div class="key on2"><b>VOL ▲</b>검 정렬</div><div class="key"><b>VOL ▼</b>방어</div></div>
+        <div class="sensor"><div>x<span>-0.33</span></div><div>y<span>0.18</span></div><div>z<span>0.52</span></div><div>w<span>0.77</span></div></div>
+      </div>
+      <div class="btn dark">나가기</div>
+    </div></div><div class="cap">4 · 게임 2P (검 정렬)</div></div>
+</div>
+
+<div class="palette">
+  <div class="sw"><div style="background:linear-gradient(180deg,#2A2B44,#4A3658,#6B4E6E)"></div><div><b>하늘</b>#2A2B44 → #6B4E6E</div></div>
+  <div class="sw"><div style="background:#7E9FB8"></div><div><b>갑판</b>#7E9FB8 / #5B7790</div></div>
+  <div class="sw"><div style="background:#F0C04A"></div><div><b>노란 패널 · 주 버튼 · 정렬</b>#F0C04A</div></div>
+  <div class="sw"><div style="background:#7EE3C6"></div><div><b>1P · 방어</b>#7EE3C6</div></div>
+  <div class="sw"><div style="background:#F2A27E"></div><div><b>2P</b>#F2A27E</div></div>
+  <div class="sw"><div style="background:#1B2321"></div><div><b>라벨 · 카드</b>#1B2321</div></div>
+  <div class="sw"><div style="background:#F4EADF"></div><div><b>행성 · 글자</b>#F4EADF</div></div>
+</div>
+
+<script>
+let seed=11;const R=()=>((seed=(seed*16807)%2147483647)/2147483647);
+const NS='http://www.w3.org/2000/svg';
+function el(svg,tag,a){const e=document.createElementNS(NS,tag);for(const k in a)e.setAttribute(k,a[k]);svg.appendChild(e);return e}
+// 로우폴리 소행성: 다각형 + 면 분할 음영
+function rock(svg,cx,cy,r,hue){
+  const n=7,pts=[];for(let i=0;i<n;i++){const a=i/n*Math.PI*2+R()*.4,rr=r*(.75+R()*.35);pts.push([cx+Math.cos(a)*rr,cy+Math.sin(a)*rr])}
+  const base={gray:['#9EA2B8','#7F849C','#62667E'],purple:['#8A7CC0','#6E62A0','#544A80'],brown:['#B3A196','#8B7B70','#6E6058'],blue:['#8FA3C6','#6F85AC','#55698E']}[hue];
+  const c=[cx-r*.15,cy-r*.15];
+  for(let i=0;i<n;i++){const a=pts[i],b=pts[(i+1)%n];const shade=i<2?0:(i<5?1:2);
+    el(svg,'polygon',{points:`${c} ${a} ${b}`,fill:base[shade],stroke:base[shade],'stroke-width':.6,'stroke-linejoin':'round'})}
+}
+function star(svg,x,y,s){el(svg,'path',{d:`M${x} ${y-s}Q${x} ${y} ${x+s} ${y}Q${x} ${y} ${x} ${y+s}Q${x} ${y} ${x-s} ${y}Q${x} ${y} ${x} ${y-s}Z`,fill:'#fff',opacity:.9})}
+function dots(svg,n){for(let i=0;i<n;i++)el(svg,'circle',{cx:R()*340,cy:R()*520,r:R()*1+.4,fill:'#fff',opacity:R()*.5+.3})}
+function planet(svg,cx,cy,r){
+  const g=el(svg,'g',{});
+  el(g,'ellipse',{cx,cy,rx:r*1.9,ry:r*.42,fill:'none',stroke:'#C9A9B8','stroke-width':r*.14,opacity:.55,transform:`rotate(-14 ${cx} ${cy})`});
+  el(g,'circle',{cx,cy,r,fill:'#F4EADF'});
+  el(g,'path',{d:`M${cx-r} ${cy-r*.2}Q${cx} ${cy-r*.05} ${cx+r} ${cy-r*.3}L${cx+r} ${cy-r*.12}Q${cx} ${cy+r*.12} ${cx-r} ${cy}Z`,fill:'#E3CBBE',opacity:.8});
+  el(g,'path',{d:`M${cx-r*.95} ${cy+r*.35}Q${cx} ${cy+r*.5} ${cx+r*.95} ${cy+r*.25}`,stroke:'#E8D3C6','stroke-width':r*.12,fill:'none'});
+  el(g,'circle',{cx:cx+r*.35,cy:cy+r*.3,r:r*.9,fill:'#5A3862',opacity:.12});
+  el(g,'path',{d:`M${cx-r*1.85} ${cy+r*.25}Q${cx} ${cy+r*.9} ${cx+r*1.85} ${cy-r*.7}`,stroke:'#C9A9B8','stroke-width':r*.14,fill:'none',opacity:.75,transform:`rotate(0)`});
+}
+// 갑판: 원형 아레나 + 노란 쐐기 패널
+function deck(svg,y){
+  el(svg,'ellipse',{cx:170,cy:y+260,rx:330,ry:300,fill:'#7E9FB8'});
+  el(svg,'ellipse',{cx:170,cy:y+260,rx:330,ry:300,fill:'none',stroke:'#5B7790','stroke-width':10});
+  for(const [x1,x2,x3,x4] of [[-60,30,80,-30],[260,370,420,300]]){el(svg,'polygon',{points:`${x1},${y+40} ${x2},${y+40} ${x3},${y+120} ${x4},${y+120}`,fill:'#F0C04A'})}
+  el(svg,'ellipse',{cx:170,cy:y+200,rx:150,ry:80,fill:'#5B7790'});
+  el(svg,'ellipse',{cx:170,cy:y+200,rx:118,ry:60,fill:'none',stroke:'#BFF3E4','stroke-width':4,opacity:.8});
+  // 배경 상자들
+  el(svg,'rect',{x:14,y:y-6,width:34,height:30,fill:'#5E7A5A'});el(svg,'rect',{x:44,y:y-2,width:30,height:24,fill:'#E9A53F'});
+  el(svg,'rect',{x:272,y:y-26,width:44,height:46,fill:'#2A2F3E'});el(svg,'rect',{x:280,y:y-14,width:26,height:14,fill:'#BDF4F4'});el(svg,'rect',{x:274,y:y-36,width:42,height:12,fill:'#E9A53F'});
+}
+// 로봇 머리 (게임 캐릭터 느낌)
+function bot(svg,cx,cy,r,color,eye){
+  el(svg,'circle',{cx,cy,r,fill:color});
+  el(svg,'circle',{cx:cx-r*.35,cy:cy-r*.4,r:r*.25,fill:'#fff',opacity:.35});
+  el(svg,'ellipse',{cx,cy:cy+r*.12,rx:r*.62,ry:r*.48,fill:'#141418'});
+  el(svg,'ellipse',{cx:cx-r*.24,cy:cy+r*.1,rx:r*.15,ry:r*.08,fill:eye});
+  el(svg,'ellipse',{cx:cx+r*.24,cy:cy+r*.1,rx:r*.15,ry:r*.08,fill:eye});
+}
+// 방패/게이지
+function shield(svg,cx,cy,color){ // 방어: 내 색 보호막
+  el(svg,'circle',{cx,cy,r:92,fill:color,opacity:.18});
+  el(svg,'circle',{cx,cy,r:76,fill:'none',stroke:color,'stroke-width':10});
+  el(svg,'circle',{cx,cy,r:90,fill:'none',stroke:color,'stroke-width':2,opacity:.5});
+}
+function align(svg,cx,cy){ // 검 정렬: 노란 조준선 + 정면 화살표
+  el(svg,'circle',{cx,cy,r:80,fill:'#F0C04A',opacity:.12});
+  el(svg,'circle',{cx,cy,r:76,fill:'none',stroke:'#F0C04A','stroke-width':4,'stroke-dasharray':'26 14'});
+  for(const a of [0,90,180,270]){const t=a*Math.PI/180;
+    el(svg,'line',{x1:cx+Math.sin(t)*84,y1:cy-Math.cos(t)*84,x2:cx+Math.sin(t)*104,y2:cy-Math.cos(t)*104,stroke:'#F0C04A','stroke-width':5,'stroke-linecap':'round'})}
+  el(svg,'polygon',{points:`${cx},${cy-128} ${cx-11},${cy-112} ${cx+11},${cy-112}`,fill:'#F0C04A'});
+}
+function hilt(svg,cx,cy,color){ // 검 손잡이 (아래에서 본 시점)
+  el(svg,'rect',{x:cx-8,y:cy-50,width:16,height:50,rx:6,fill:color,opacity:.85});
+  el(svg,'rect',{x:cx-44,y:cy-8,width:88,height:34,rx:4,fill:'#E9D66B'});
+  el(svg,'circle',{cx,cy:cy+12,r:20,fill:color});
+}
+
+const scenes={
+  connect(s){dots(s,50);planet(s,268,95,38);rock(s,70,110,34,'brown');rock(s,140,60,16,'purple');rock(s,300,250,18,'gray');rock(s,40,250,14,'blue');
+    star(s,195,60,8);star(s,30,180,6);star(s,310,40,6);
+    // 로고: 민트 로봇 + 검
+    bot(s,170,175,40,'#7EE3C6','#7EE3C6');
+    el(s,'rect',{x:206,y:110,width:9,height:86,rx:3,fill:'#F4EADF',transform:'rotate(28 210 175)'});
+    el(s,'rect',{x:192,y:186,width:36,height:9,rx:3,fill:'#F0C04A',transform:'rotate(28 210 175)'});
+    deck(s,705)},
+  wait(s){dots(s,60);rock(s,60,140,40,'brown');rock(s,270,120,30,'blue');rock(s,230,60,16,'purple');rock(s,300,330,20,'gray');rock(s,30,330,14,'purple');
+    star(s,170,90,9);star(s,40,60,6);star(s,310,210,6);
+    el(s,'ellipse',{cx:170,cy:268,rx:110,ry:22,fill:'none',stroke:'#F0C04A','stroke-width':3,opacity:.6,'stroke-dasharray':'10 8'});
+    bot(s,170,230,58,'#7EE3C6','#7EE3C6');
+    deck(s,610)},
+  play1(s){dots(s,50);rock(s,80,120,40,'brown');rock(s,250,90,28,'purple');rock(s,290,200,22,'blue');rock(s,40,230,14,'gray');
+    star(s,180,70,8);star(s,320,60,6);
+    shield(s,170,230,'#7EE3C6');bot(s,170,230,44,'#F2A27E','#F2A27E');
+    deck(s,610);hilt(s,170,640,'#7EE3C6')},
+  play2(s){dots(s,50);planet(s,250,110,40);rock(s,70,100,36,'blue');rock(s,130,190,18,'gray');rock(s,300,240,22,'brown');
+    star(s,40,60,7);star(s,170,50,6);
+    align(s,170,230);bot(s,170,230,44,'#7EE3C6','#7EE3C6');
+    deck(s,610);hilt(s,170,640,'#F2A27E')}
+};
+document.querySelectorAll('svg.bg').forEach(s=>scenes[s.dataset.scene](s));
+</script>
+</body>
+</html>

@@ -1,13 +1,27 @@
 <resources>
     <string name="app_name">검 컨트롤러</string>
+    <string name="app_tag">GUM · FILED</string>
 
-    <string name="hint_server">서버 주소 (예: 192.168.0.5:8080)</string>
-    <string name="hint_pin">방 PIN</string>
-    <string name="btn_scan">QR 스캔</string>
-    <string name="btn_join">입장</string>
+    <string name="label_server">서버 주소</string>
+    <string name="label_pin">방 PIN</string>
+    <string name="hint_server">192.168.0.5:8080</string>
+    <string name="hint_pin">K7Q2</string>
+    <string name="btn_scan">QR 스캔으로 입장</string>
+    <string name="btn_join">PIN으로 입장</string>
     <string name="btn_sensor_test">센서 테스트 (서버 없이)</string>
     <string name="btn_leave">나가기</string>
 
-    <string name="waiting_title">게임 시작 대기 중</string>
-    <string name="play_hint">볼륨 상: 방어 / 볼륨 하: 강타 충전</string>
+    <string name="waiting_title">대기 중</string>
+    <string name="waiting_tip_title">TIP</string>
+    <string name="waiting_tip">시작하면 휴대폰을 정면으로 들고\n볼륨 ▲ 를 눌러 검을 정렬하세요</string>
+
+    <!-- 게임 화면: 볼륨 상 = 검 정렬, 볼륨 하 = 방어 -->
+    <string name="key_align">VOL ▲  검 정렬</string>
+    <string name="key_defend">VOL ▼  방어</string>
+    <string name="state_idle">공격</string>
+    <string name="state_idle_hint">휘둘러서 공격하세요</string>
+    <string name="state_defend">방어</string>
+    <string name="state_defend_hint">누르고 있는 동안 막아요</string>
+    <string name="state_align">검 정렬</string>
+    <string name="state_align_hint">지금 방향이 정면이 돼요</string>
 </resources>
