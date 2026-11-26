@@ -1,4 +1,4 @@
-package com.gumfiled.controller.ui
+package com.gumfield.controller.ui
 
 import android.graphics.Canvas
 import android.graphics.Color
@@ -16,8 +16,8 @@ import kotlin.random.Random
  */
 object GumArt {
 
-    val P1 = Color.parseColor("#7EE3C6")
-    val P2 = Color.parseColor("#F2A27E")
+    val P1 = Color.parseColor("#4FD1A5")
+    val P2 = Color.parseColor("#F28B66")
     val GOLD = Color.parseColor("#F0C04A")
     val CREAM = Color.parseColor("#F4EADF")
     val DECK = Color.parseColor("#7E9FB8")

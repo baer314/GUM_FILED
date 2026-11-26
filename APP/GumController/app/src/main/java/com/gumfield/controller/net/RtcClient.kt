@@ -1,10 +1,10 @@
-package com.gumfiled.controller.net
+package com.gumfield.controller.net
 
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import com.gumfiled.controller.Config
+import com.gumfield.controller.Config
 import org.json.JSONException
 import org.json.JSONObject
 import org.webrtc.DataChannel

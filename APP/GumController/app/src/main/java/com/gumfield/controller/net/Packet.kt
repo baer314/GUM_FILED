@@ -1,7 +1,7 @@
-package com.gumfiled.controller.net
+package com.gumfield.controller.net
 
-import com.gumfiled.controller.Config
-import com.gumfiled.controller.sensor.SensorSnapshot
+import com.gumfield.controller.Config
+import com.gumfield.controller.sensor.SensorSnapshot
 import org.json.JSONObject
 
 /**

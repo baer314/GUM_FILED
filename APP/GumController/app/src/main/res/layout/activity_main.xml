@@ -12,7 +12,7 @@
     android:fitsSystemWindows="true"
     android:keepScreenOn="true">
 
-    <com.gumfiled.controller.ui.SpaceBackgroundView
+    <com.gumfield.controller.ui.SpaceBackgroundView
         android:id="@+id/spaceBg"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
@@ -34,7 +34,7 @@
             android:paddingEnd="24dp"
             android:paddingBottom="64dp">
 
-            <com.gumfiled.controller.ui.OrbView
+            <com.gumfield.controller.ui.OrbView
                 android:id="@+id/orbLogo"
                 android:layout_width="150dp"
                 android:layout_height="150dp"
@@ -153,7 +153,7 @@
             android:gravity="center"
             android:orientation="vertical">
 
-            <com.gumfiled.controller.ui.OrbView
+            <com.gumfield.controller.ui.OrbView
                 android:id="@+id/orbWaiting"
                 android:layout_width="240dp"
                 android:layout_height="240dp" />
@@ -264,7 +264,7 @@
             android:gravity="center_horizontal"
             android:orientation="vertical">
 
-            <com.gumfiled.controller.ui.OrbView
+            <com.gumfield.controller.ui.OrbView
                 android:id="@+id/orbPlay"
                 android:layout_width="250dp"
                 android:layout_height="250dp"

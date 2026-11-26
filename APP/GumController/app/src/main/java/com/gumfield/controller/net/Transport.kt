@@ -1,4 +1,4 @@
-package com.gumfiled.controller.net
+package com.gumfield.controller.net
 
 /**
  * 게임 데이터(SENSOR)를 PC로 보내는 통로.

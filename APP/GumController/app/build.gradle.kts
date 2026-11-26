@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.gumfiled.controller"
+    namespace = "com.gumfield.controller"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.gumfiled.controller"
+        applicationId = "com.gumfield.controller"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

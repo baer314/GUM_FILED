@@ -1,4 +1,4 @@
-package com.gumfiled.controller
+package com.gumfield.controller
 
 /** 팀 합의에 따라 바뀔 수 있는 값을 한 곳에 모아둔다. */
 object Config {
