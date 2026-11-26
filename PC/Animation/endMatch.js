@@ -51,7 +51,8 @@
       const mesh = trackedMeshes.get(id);
       if (!mesh) continue;
       mesh.visible = true;
-      mesh.userData?.setArmOpacity?.(savedArmOpacity);
+      const liveArmOpacity = root.InGameFront?.getArmOpacity?.() ?? root.InGameBack?.getArmOpacity?.() ?? savedArmOpacity;
+      mesh.userData?.setArmOpacity?.(liveArmOpacity);
       mesh.userData?.bodyGroup?.userData?.setShakeOffset?.(0, 0, 0);
       mesh.userData?.bodyGroup?.userData?.setRotationOffset?.(0, 0, 0);
       mesh.userData?.headGroup?.userData?.setShakeOffset?.(0, 0, 0);

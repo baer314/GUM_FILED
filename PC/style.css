@@ -339,7 +339,7 @@ p{overflow-wrap:anywhere}
 .swap-views-zone.is-ready-visible .swap-views-btn,.swap-views-zone:hover .swap-views-btn,.swap-views-btn:focus-visible{opacity:1;transform:scale(1)}
 .swap-views-btn:hover{background:rgba(32,93,72,.94);border-color:#7ee0b8}
 .swap-views-btn:active{transform:scale(.95)}
-.match-scoreboard{position:absolute;top:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:14px;padding:8px 18px;border-radius:999px;background:rgba(10,19,17,.8);border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:104}
+.match-scoreboard{position:absolute;top:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:14px;padding:8px 18px;border-radius:999px;background:rgba(10,19,17,.88);border:1px solid rgba(255,255,255,.18);box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:104}
 .ingame-split-ui.is-swapped .match-scoreboard{flex-direction:row-reverse}
 .score-group{display:flex;align-items:center;gap:8px}
 .score-group.score-p1{flex-direction:row-reverse}

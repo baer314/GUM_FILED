@@ -3,6 +3,7 @@
   const $ = (id) => document.getElementById(id);
   let mounted = false;
   let keyBound = false;
+  let devMode = false;
   let configLoaded = false;
   let configLoadingPromise = null;
   const DEV_CONFIG_URL = '/devConfig.txt';
@@ -42,6 +43,7 @@
     'vol-swing',
     'vol-lose',
     'vol-hit',
+    'vol-bgm',
   ];
 
   const DEV_PANEL_MARKUP = `
@@ -171,9 +173,12 @@
         <label>hit 효과음 볼륨 (%, 0~300)
           <input id="vol-hit" type="number" min="0" max="300" step="5" value="100">
         </label>
+        <label>BGM 볼륨 (%, 0~300)
+          <input id="vol-bgm" type="number" min="0" max="300" step="5" value="100">
+        </label>
       </div>
     </aside>
-    <aside id="ingame-overlay" class="ingame-overlay" aria-live="polite">
+    <aside id="ingame-overlay" class="ingame-overlay" hidden aria-live="polite">
       <div class="ingame-overlay-header">
         <div>
           <p class="ingame-eyebrow">GUM FIELD · IN-GAME MONITOR (TAB TOGGLE)</p>
@@ -194,7 +199,7 @@
     if (topBar && !topBar.querySelector?.('.tab-hint')) {
       topBar.insertAdjacentHTML(
         'afterbegin',
-        '<span class="tab-hint"><kbd>9</kbd> 정면 검 선분 · <kbd>0</kbd> 개발자 설정 · <kbd>Tab</kbd> 패킷 정보 토글</span>'
+        '<span id="dev-mode-hint" class="tab-hint" hidden><kbd>DEV</kbd> <kbd>9</kbd> 정면 검 선분 · <kbd>0</kbd> 개발자 설정 · <kbd>Tab</kbd> 패킷 정보 · <kbd>`</kbd> 종료</span>'
       );
     }
 
@@ -203,8 +208,26 @@
     }
   }
 
-  // [Tab 키] 실시간 컨트롤러 패킷 모니터 토글
+  // [` 키] 개발자 모드 토글 (OFF 시 모든 개발자 패널/오버레이/힌트 숨김)
+  function setDevMode(enabled) {
+    devMode = Boolean(enabled);
+    const hint = $('dev-mode-hint');
+    if (hint) hint.hidden = !devMode;
+    if (!devMode) {
+      if ($('ingame-overlay')) $('ingame-overlay').hidden = true;
+      if ($('ingame-duration-panel')) $('ingame-duration-panel').hidden = true;
+      if ($('frontal-sword-hud')) $('frontal-sword-hud').hidden = true;
+    }
+    return devMode;
+  }
+
+  function toggleDevMode() {
+    return setDevMode(!devMode);
+  }
+
+  // [Tab 키] 실시간 컨트롤러 패킷 모니터 토글 (개발자 모드에서만 동작)
   function toggleOverlay() {
+    if (!devMode) return false;
     const overlay = $('ingame-overlay');
     if (!overlay) return false;
     overlay.hidden = !overlay.hidden;
@@ -419,6 +442,7 @@
       if ($('vol-swing')) $('vol-swing').value = String(sfxVols.swing ?? 100);
       if ($('vol-lose')) $('vol-lose').value = String(sfxVols.lose ?? 100);
       if ($('vol-hit')) $('vol-hit').value = String(sfxVols.hit ?? 100);
+      if ($('vol-bgm')) $('vol-bgm').value = String(sfxVols.bgm ?? 100);
     }
   }
 
@@ -554,6 +578,7 @@
     if ($('vol-swing')) root.SoundManager?.setCategoryVolume?.('swing', $('vol-swing').value);
     if ($('vol-lose')) root.SoundManager?.setCategoryVolume?.('lose', $('vol-lose').value);
     if ($('vol-hit')) root.SoundManager?.setCategoryVolume?.('hit', $('vol-hit').value);
+    if ($('vol-bgm')) root.SoundManager?.setCategoryVolume?.('bgm', $('vol-bgm').value);
   }
 
   function toggleDurationPanel(forceOpen) {
@@ -567,10 +592,19 @@
     return willOpen;
   }
 
+  let lastPacketRenderMs = 0;
+
   // [Tab 키] 실시간 컨트롤러 패킷 및 검 쿼터니언/각속도 오버레이 렌더링
   function renderPackets(players = [], rates = new Map(), receivedPlayerInfo, receivedAngles) {
+    const overlay = $('ingame-overlay');
+    if (overlay && overlay.hidden === true) return;
     const container = $('ingame-packets');
     if (!container) return;
+    const nowMs = typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now();
+    if (overlay && nowMs - lastPacketRenderMs < 80) return;
+    lastPacketRenderMs = nowMs;
     container.replaceChildren();
     if (!players.length) {
       const empty = document.createElement('section');
@@ -646,6 +680,18 @@
       const activeTag = event.target?.tagName?.toUpperCase?.() || '';
       const isEditingInput = activeTag === 'INPUT' || activeTag === 'TEXTAREA';
 
+      // [`] 키: 개발자 모드 ON/OFF 전환
+      if (event.code === 'Backquote' || event.key === '`' || event.key === '~') {
+        if (!isEditingInput) {
+          event.preventDefault?.();
+          toggleDevMode();
+        }
+        return;
+      }
+
+      // 개발자 모드가 켜져 있을 때만 9 / 0 / Tab 개발자 도구 조작 허용
+      if (!devMode) return;
+
       if (event.key === 'Tab' || event.code === 'Tab') {
         if (!isEditingInput) {
           event.preventDefault?.();
@@ -695,20 +741,63 @@
   }
 
   function applyConfigValues(config = {}) {
-    let appliedAny = false;
+    if (!config || typeof config !== 'object' || Object.keys(config).length === 0) return false;
+    // DOM 패널이 아직 마운트되지 않은 상태(로비 배경/초기 실행)에서도 백엔드·프론트엔드에 즉시 반영
+    const durUpdates = {};
+    if (config['dur-attack'] !== undefined) durUpdates.ATTACK = config['dur-attack'];
+    if (config['dur-attack-hit'] !== undefined) durUpdates.ATTACK_SUCCESS_HIT = config['dur-attack-hit'];
+    if (config['dur-attack-fail'] !== undefined) durUpdates.ATTACK_FAIL_STUN = config['dur-attack-fail'];
+    if (config['dur-parry-stun'] !== undefined) durUpdates.PARRY_STUN = config['dur-parry-stun'];
+    if (Object.keys(durUpdates).length > 0) root.InGameBack?.setJudgmentDurations?.(durUpdates);
+
+    if (config['attack-boost-angle'] !== undefined) root.InGameBack?.setAttackBoostAngleDeg?.(config['attack-boost-angle']);
+    if (config['attack-cooldown'] !== undefined) root.InGameBack?.setAttackCooldownDuration?.(config['attack-cooldown']);
+    if (config['attack-rotation-damping'] !== undefined) root.InGameBack?.setAttackRotationDamping?.(config['attack-rotation-damping']);
+    if (config['sensor-tilt-smoothing'] !== undefined) root.InGameBack?.setSensorTiltSmoothing?.(config['sensor-tilt-smoothing']);
+    if (config['accel-aim-gain'] !== undefined) root.InGameBack?.setAccelAimGain?.(config['accel-aim-gain']);
+    if (config['arm-swing-multiplier'] !== undefined) root.InGameBack?.setArmSwingMultiplier?.(config['arm-swing-multiplier']);
+    if (config['attack-arm-extension'] !== undefined) (root.InGameBack?.setAttackArmExtension || root.InGameFront?.setAttackArmExtension)?.(config['attack-arm-extension']);
+    if (config['defense-sword-offset'] !== undefined) (root.InGameBack?.setDefenseSwordOffset || root.InGameFront?.setDefenseSwordOffset)?.(config['defense-sword-offset']);
+    if (config['defense-angle-threshold'] !== undefined) root.InGameBack?.setDefenseAngleThreshold?.(config['defense-angle-threshold']);
+    if (config['defense-min-segment-length'] !== undefined) root.InGameBack?.setDefenseMinSegmentLength?.(config['defense-min-segment-length']);
+    if (config['stun-circle-radius'] !== undefined) (root.InGameBack?.setStunCircleRadius || root.InGameFront?.setStunCircleRadius)?.(config['stun-circle-radius']);
+    if (config['player-distance'] !== undefined) (root.InGameBack?.setPlayerDistance || root.InGameFront?.setPlayerDistance)?.(config['player-distance']);
+    if (config['hit-pushback-distance'] !== undefined) root.InGameBack?.setHitPushbackDistance?.(config['hit-pushback-distance']);
+    if (config['self-head-opacity'] !== undefined) (root.InGameBack?.setSelfHeadOpacity || root.InGameFront?.setSelfHeadOpacity)?.(config['self-head-opacity']);
+    if (config['arm-opacity'] !== undefined) (root.InGameBack?.setArmOpacity || root.InGameFront?.setArmOpacity)?.(config['arm-opacity']);
+    if (config['head-offset-z'] !== undefined) (root.InGameBack?.setHeadOffsetZ || root.InGameFront?.setHeadOffsetZ)?.(config['head-offset-z']);
+
+    const boxUpdates = {};
+    if (config['head-box-x'] !== undefined) boxUpdates.x = config['head-box-x'];
+    if (config['head-box-y'] !== undefined) boxUpdates.y = config['head-box-y'];
+    if (config['head-box-y-up'] !== undefined) boxUpdates.yUp = config['head-box-y-up'];
+    if (config['head-box-z'] !== undefined) boxUpdates.z = config['head-box-z'];
+    if (Object.keys(boxUpdates).length > 0) (root.InGameBack?.setHeadHitboxSize || root.InGameFront?.setHeadHitboxSize)?.(boxUpdates);
+
+    const camUpdates = {};
+    if (config['camera-back-offset'] !== undefined) camUpdates.back = config['camera-back-offset'];
+    if (config['camera-height'] !== undefined) camUpdates.height = config['camera-height'];
+    if (Object.keys(camUpdates).length > 0) (root.InGameBack?.setCameraOffset || root.InGameFront?.setCameraOffset)?.(camUpdates);
+
+    const angUpdates = {};
+    if (config['ang-vel-thresh-x'] !== undefined) angUpdates.x = config['ang-vel-thresh-x'];
+    if (config['ang-vel-thresh-y'] !== undefined) angUpdates.y = config['ang-vel-thresh-y'];
+    if (config['ang-vel-thresh-z'] !== undefined) angUpdates.z = config['ang-vel-thresh-z'];
+    if (Object.keys(angUpdates).length > 0) root.InGameBack?.setAttackAngularThreshold?.(angUpdates);
+
+    if (config['vol-reset'] !== undefined) root.SoundManager?.setCategoryVolume?.('reset', config['vol-reset']);
+    if (config['vol-hum'] !== undefined) root.SoundManager?.setCategoryVolume?.('hum', config['vol-hum']);
+    if (config['vol-swing'] !== undefined) root.SoundManager?.setCategoryVolume?.('swing', config['vol-swing']);
+    if (config['vol-lose'] !== undefined) root.SoundManager?.setCategoryVolume?.('lose', config['vol-lose']);
+    if (config['vol-hit'] !== undefined) root.SoundManager?.setCategoryVolume?.('hit', config['vol-hit']);
+    if (config['vol-bgm'] !== undefined) root.SoundManager?.setCategoryVolume?.('bgm', config['vol-bgm']);
+
     for (const [key, val] of Object.entries(config)) {
-      if (!Number.isFinite(Number(val))) continue;
       const inputEl = $(key);
-      if (inputEl) {
-        inputEl.value = String(val);
-      }
-      appliedAny = true;
+      if (inputEl) inputEl.value = String(val);
     }
-    if (appliedAny) {
-      applyDurationFromInputs();
-      syncDurationInputs();
-    }
-    return appliedAny;
+    syncDurationInputs();
+    return true;
   }
 
   async function loadConfigDefaults({ force = false } = {}) {
@@ -735,6 +824,7 @@
   function init() {
     mountDevUI();
     bindDevKeys();
+    setDevMode(devMode);
     syncDurationInputs();
     loadConfigDefaults();
   }
@@ -743,6 +833,9 @@
     init,
     mountDevUI,
     bindDevKeys,
+    setDevMode,
+    toggleDevMode,
+    isDevMode: () => devMode,
     syncDurationInputs,
     parseDevConfigText,
     loadConfigDefaults,

@@ -547,9 +547,10 @@
     return setState.stepDistance;
   }
 
-  // 센서 노이즈 스파이크 방지용 스무딩, 공격 중 회전 감쇠, 공격 추가 이동 및 선형가속도 보조 조준 파라미터
-  let sensorTiltSmoothing = 0.65;          // 일반 상태 쿼터니언 보간 계수 (0.05~1.0, 1.0이면 보간 없음)
+  // 센서 노이즈 스파이크 방지용 스무딩, 공격 중 회전 감쇠, 공격 쿨타임 중 둔화, 공격 추가 이동 및 선형가속도 보조 조준 파라미터
+  let sensorTiltSmoothing = 0.65;          // 일반 상태 쿼터니언 보간 계수 (0.05~1.0, 클수록 빠름)
   let attackRotationDamping = 0.18;        // 공격(ATTACK) 중 회전 감쇠 보간 계수 (0.05~1.0, 1.0이면 감쇠 없음)
+  let attackCooldownSmoothing = 0.08;      // 공격 종료 후 쿨타임(후딜레이) 동안 검이 둔하게 움직이는 보간 계수 (0.02~1.0)
   let attackBoostAngleDeg = 32;            // 공격 판정 시 실제 움직임보다 추가로 더 나아갔다가 복귀하는 최대 각도 (도, 0~90)
   let accelAimGain = 0.45;                 // 선형가속도 기반 팔/검 보조 조준 감도 (0~3.0, 0이면 비활성화)
   const ACCEL_AIM_DEADZONE = 0.8;          // 미세 손떨림 무시용 선형가속도 데드존 (m/s^2)
@@ -599,9 +600,10 @@
     const ax = Math.abs(calAcc.x) >= ACCEL_AIM_DEADZONE ? calAcc.x : 0;
     const ay = Math.abs(calAcc.z) >= ACCEL_AIM_DEADZONE ? calAcc.z : 0;
 
-    // 속도 감쇠 적분 + 위치 스프링 복귀 (팔 이동 시 즉각 보조하고, 멈추면 드리프트 없이 자연 복귀)
-    player.accelAimVel.x = player.accelAimVel.x * 0.84 + ax * dt * accelAimGain * 2.4;
-    player.accelAimVel.y = player.accelAimVel.y * 0.84 + ay * dt * accelAimGain * 2.4;
+    // 속도 감쇠 적분 + 위치 스프링 복귀 (공격 후 쿨타임 중에는 보조 조준도 둔하게 감쇠)
+    const cooldownScale = (player.state !== PLAYER_STATE.ATTACK && (Number(player.attackCooldown) || 0) > 0) ? 0.25 : 1.0;
+    player.accelAimVel.x = player.accelAimVel.x * 0.84 + ax * dt * accelAimGain * 2.4 * cooldownScale;
+    player.accelAimVel.y = player.accelAimVel.y * 0.84 + ay * dt * accelAimGain * 2.4 * cooldownScale;
 
     let ox = player.accelAimOffset.x * 0.90 + player.accelAimVel.x * dt;
     let oy = player.accelAimOffset.y * 0.90 + player.accelAimVel.y * dt;
@@ -875,9 +877,13 @@
           playerData[playerId].accelAimVel = { x: 0, y: 0 };
           playerData[playerId].accelAimOffset = { x: 0, y: 0 };
         } else {
+          const isInAttackCooldown = playerData[playerId].state !== PLAYER_STATE.ATTACK
+            && (Number(playerData[playerId].attackCooldown) || 0) > 0;
           const smoothingFactor = playerData[playerId].state === PLAYER_STATE.ATTACK
             ? attackRotationDamping
-            : sensorTiltSmoothing;
+            : (isInAttackCooldown
+              ? Math.min(sensorTiltSmoothing, attackCooldownSmoothing)
+              : sensorTiltSmoothing);
           const smoothed = slerpQuaternions(prevLiveTilt, targetTilt, smoothingFactor);
           const nextLive = {
             x: Number(smoothed.x.toFixed(4)) || 0,
@@ -1928,8 +1934,8 @@
     }
 
     for (const [playerId, player] of Object.entries(playerData)) {
-      // 0) 공격 후 쿨다운(후딜레이) 차감
-      if (player.attackCooldown > 0) {
+      // 0) 공격 유지시간이 끝난 뒤에만 공격 후 쿨다운(후딜레이) 차감
+      if (player.state !== PLAYER_STATE.ATTACK && player.attackCooldown > 0) {
         player.attackCooldown = Math.max(0, Number((player.attackCooldown - dt).toFixed(4)));
       }
 
@@ -1937,7 +1943,7 @@
       if (player.stateDuration > 0) {
         player.stateDuration = Math.max(0, Number((player.stateDuration - dt).toFixed(4)));
         if (player.stateDuration <= 0) {
-          // 방법 2: 공격(ATTACK)이 자연 종료되면 회수 반동으로 인한 연속 오인식 공격을 막기 위해 쿨다운 부여
+          // 공격(ATTACK) 유지시간이 끝난 시점부터 쿨다운(후딜레이) 시작 -> 이 시간 동안 재공격 차단 및 검 회전 둔화
           if (player.state === PLAYER_STATE.ATTACK && attackCooldownDuration > 0) {
             player.attackCooldown = attackCooldownDuration;
           }

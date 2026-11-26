@@ -368,7 +368,7 @@
         opacity: 1.0,
       });
       headMesh = new THREE.Mesh(
-        new THREE.SphereGeometry(radius, 36, 36),
+        new THREE.SphereGeometry(radius, 24, 20),
         headMat
       );
       headGroup.add(headMesh);
@@ -395,7 +395,7 @@
           depthWrite: false,
         });
         visorMesh = new THREE.Mesh(
-          new THREE.SphereGeometry(radius * 1.01, 36, 24, phiStart, phiLength, thetaStart, thetaLength),
+          new THREE.SphereGeometry(radius * 1.01, 24, 16, phiStart, phiLength, thetaStart, thetaLength),
           visorMat
         );
         visorMesh.renderOrder = 1;
@@ -410,7 +410,7 @@
             depthWrite: false,
           });
           eyeMesh = new THREE.Mesh(
-            new THREE.SphereGeometry(radius * 1.016, 36, 24, phiStart, phiLength, thetaStart, thetaLength),
+            new THREE.SphereGeometry(radius * 1.016, 24, 16, phiStart, phiLength, thetaStart, thetaLength),
             eyeMat
           );
           eyeMesh.renderOrder = 2;
@@ -430,27 +430,28 @@
       headGroup.userData.hasStripes = Boolean(enabled);
     }
 
+    let lastAppliedOpacity = 1.0;
+
     function setOpacity(opacity) {
       const clamped = Math.min(1, Math.max(0, Number.isFinite(Number(opacity)) ? Number(opacity) : 1));
+      if (Math.abs(clamped - lastAppliedOpacity) < 0.001) return;
+      lastAppliedOpacity = clamped;
       const isVisible = clamped > 0;
 
       if (headMesh) headMesh.visible = isVisible;
       if (visorMesh) visorMesh.visible = isVisible;
       if (eyeMesh) eyeMesh.visible = isVisible;
 
+      // transparent=true를 고정 유지해 매 프레임 셰이더 재컴파일(needsUpdate=true) 방지
       if (headMat) {
         headMat.opacity = clamped;
-        headMat.transparent = clamped < 1;
         headMat.depthWrite = clamped >= 1;
-        headMat.needsUpdate = true;
       }
       if (visorMat) {
         visorMat.opacity = clamped;
-        visorMat.needsUpdate = true;
       }
       if (eyeMat) {
         eyeMat.opacity = clamped;
-        eyeMat.needsUpdate = true;
       }
     }
 

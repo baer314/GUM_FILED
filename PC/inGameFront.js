@@ -317,9 +317,9 @@
     cameraP2.position.set(cam2X, currentCameraHeight, 0);
     cameraP2.lookAt(cam2X - CAMERA_LOOK_FORWARD, 1.1, 0);
 
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
-    if (root.devicePixelRatio) renderer.setPixelRatio(Math.min(root.devicePixelRatio, 2));
+    if (root.devicePixelRatio) renderer.setPixelRatio(Math.min(root.devicePixelRatio, 1.25));
 
     // Graphic/Background.js 모듈을 사용해 배경 색상, 조명, 그리드 구성 + Effect 이펙트 초기화
     const bgRefs = root.BackgroundGraphic?.setupBackground(THREE, scene);
@@ -483,7 +483,9 @@
       ingameView.classList.add('lobby-bg-mode');
     }
     initThree();
+    root.InGameDev?.loadConfigDefaults?.();
     applyPlayerDistanceLayout(currentPlayerDistance);
+    root.SoundManager?.setBgmState?.('MATCH', 1.0);
     if (!animId && renderer) animate();
   }
 
@@ -505,12 +507,21 @@
     if (modal) modal.hidden = !pauseOpen;
     root.InGameBack?.setPaused?.(pauseOpen);
     if (pauseOpen) {
+      lastPauseStatusRenderMs = 0;
       root.SoundManager?.setHumPlaying?.(false);
     }
     return pauseOpen;
   }
 
+  let lastPauseStatusRenderMs = 0;
+
   function renderPausePlayerStatus(players = [], rates = new Map()) {
+    if (!pauseOpen) return;
+    const nowMs = typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now();
+    if (nowMs - lastPauseStatusRenderMs < 200) return;
+    lastPauseStatusRenderMs = nowMs;
     const listEl = $('pause-player-status');
     if (!listEl) return;
     const byId = new Map();
@@ -561,6 +572,17 @@
       $('back-to-lobby').onclick = () => {
         setPauseMenuOpen(false);
         onBackToLobby?.();
+      };
+    }
+    const bgmSlider = $('pause-bgm-volume');
+    const bgmValEl = $('pause-bgm-volume-val');
+    if (bgmSlider) {
+      const curBgmMaster = root.SoundManager?.getMasterBgmVolume?.() ?? 100;
+      bgmSlider.value = String(curBgmMaster);
+      if (bgmValEl) bgmValEl.textContent = `${Math.round(curBgmMaster)}%`;
+      bgmSlider.oninput = () => {
+        const next = root.SoundManager?.setMasterBgmVolume?.(bgmSlider.value) ?? Number(bgmSlider.value);
+        if (bgmValEl) bgmValEl.textContent = `${Math.round(next)}%`;
       };
     }
     const sfxSlider = $('pause-sfx-volume');
@@ -1069,18 +1091,25 @@
       }
     }
 
-    // 0-1) 중앙 상단 5판 3선승제 승점 불빛 & 매치 종료 통합 화면 UI 갱신
+    // 0-1) 중앙 상단 5판 3선승제 승점 불빛 & 매치 종료 통합 화면 UI 갱신 (변경 시에만 DOM 갱신)
     const p1Score = Number(setInfo.scores?.PLAYER_1) || 0;
     const p2Score = Number(setInfo.scores?.PLAYER_2) || 0;
-    const scoreDots = document.querySelectorAll?.('.score-dot') || [];
-    for (const dot of scoreDots) {
-      const pId = dot.dataset?.player;
-      const idx = Number(dot.dataset?.index) || 0;
-      const score = pId === 'PLAYER_1' ? p1Score : p2Score;
-      dot.classList?.toggle?.('is-lit', idx > 0 && idx <= score);
-    }
-    if ($('score-round-label')) {
-      $('score-round-label').textContent = `R${Number(setInfo.setNumber) || 1}`;
+    const curSetNum = Number(setInfo.setNumber) || 1;
+    const nextScoreKey = `${p1Score}:${p2Score}:${curSetNum}`;
+    if (nextScoreKey !== lastScoreKey) {
+      lastScoreKey = nextScoreKey;
+      if (!cachedScoreDots && typeof document !== 'undefined') {
+        cachedScoreDots = document.querySelectorAll?.('.score-dot') || [];
+      }
+      for (const dot of cachedScoreDots || []) {
+        const pId = dot.dataset?.player;
+        const idx = Number(dot.dataset?.index) || 0;
+        const score = pId === 'PLAYER_1' ? p1Score : p2Score;
+        dot.classList?.toggle?.('is-lit', idx > 0 && idx <= score);
+      }
+      if ($('score-round-label')) {
+        $('score-round-label').textContent = `R${curSetNum}`;
+      }
     }
 
     const ingameView = $('ingame-view');
@@ -1134,13 +1163,23 @@
       root.SoundManager?.playRandom?.('hit');
     }
 
-    // 2-3) 게임 중 hum 루프 출력 및 라운드 패배(RESULT) 시 lose 효과음 출력
+    // 2-3) 게임 중 hum 루프 출력, 라운드 패배(RESULT) 시 lose 효과음 출력 및 BGM 상태(matchBgm -> mainBgm, 서든데스 1.3배속) 동기화
     const shouldPlayHum = Boolean(setInfo.phase === 'PLAYING' && !setInfo.winner && !pauseOpen);
     root.SoundManager?.setHumPlaying?.(shouldPlayHum);
     if (setInfo.phase === 'RESULT' && lastPhase !== 'RESULT') {
       root.SoundManager?.playRandom?.('lose');
     }
     lastPhase = setInfo.phase || '';
+
+    const setNum = Number(setInfo.setNumber) || 1;
+    let bgmMode = 'MAIN';
+    if (setInfo.phase === 'MATCH_END') {
+      bgmMode = 'WIN';
+    } else if (setNum === 1 && (setInfo.phase === 'INTRO' || setInfo.phase === 'READY')) {
+      bgmMode = 'MATCH';
+    }
+    const bgmRate = (setInfo.phase === 'PLAYING' && setInfo.isDoubleDamage && !setInfo.winner) ? 1.3 : 1.0;
+    root.SoundManager?.setBgmState?.(bgmMode, bgmRate);
 
     // 3) 세트 시작 준비(영점 정렬) 안내 오버레이 표시 + 중앙 화면 전환 버튼 상시 노출 여부 갱신
     const isReadyPhase = setInfo.phase === 'READY';
@@ -1196,6 +1235,9 @@
     }
   }
 
+  let cachedScoreDots = null;
+  let lastScoreKey = '';
+
   function updateGraphics(playerData) {
     if (!playerData || typeof playerData !== 'object') return;
     for (const [playerId, info] of Object.entries(playerData)) {
@@ -1206,7 +1248,10 @@
     }
     renderSetUI();
     root.InGameDev?.renderFrontalSwordHud?.(receivedPlayerInfo);
-    renderSplitView();
+    // requestAnimationFrame(animate) 루프가 이미 돌고 있으면 중복 WebGL 렌더링 방지
+    if (!animId) {
+      renderSplitView();
+    }
   }
 
   function renderPackets(players, rates) {

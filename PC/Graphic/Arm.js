@@ -5,6 +5,9 @@
   const SHOULDER_HALF_WIDTH = 0.44;                      // 양쪽 어깨/팔꿈치 간격 (왼팔: -0.44, 오른팔: +0.44)
   const WRIST_BASE_OFFSET = { x: 0, y: 0.12, z: -0.95 }; // 양손으로 쥔 검 손잡이의 기본 정면 위치
 
+  let tmpUpVec = null;
+  let tmpDirVec = null;
+
   function positionLimbBetween(THREE, limb, sx, sy, sz, tx, ty, tz, baseLen) {
     if (!limb) return;
     const dx = tx - sx;
@@ -16,9 +19,10 @@
       limb.scale.y = len / baseLen;
     }
     if (THREE?.Vector3 && limb.quaternion?.setFromUnitVectors) {
-      const up = new THREE.Vector3(0, 1, 0);
-      const dir = new THREE.Vector3(dx / len, dy / len, dz / len);
-      limb.quaternion.setFromUnitVectors(up, dir);
+      if (!tmpUpVec) tmpUpVec = new THREE.Vector3(0, 1, 0);
+      if (!tmpDirVec) tmpDirVec = new THREE.Vector3();
+      tmpDirVec.set(dx / len, dy / len, dz / len);
+      limb.quaternion.setFromUnitVectors(tmpUpVec, tmpDirVec);
     }
   }
 

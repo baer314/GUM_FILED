@@ -22,7 +22,7 @@
 
   // 매끈한 기계형(로봇 아머) 역삼각형 상체 3D 메쉬 생성
   function createSmoothRobotTorsoGeometry(THREE, shoulderHalfWidth, bodyHeight) {
-    const geom = new THREE.CylinderGeometry(1, 1, 1, 64, 48, false);
+    const geom = new THREE.CylinderGeometry(1, 1, 1, 32, 24, false);
     const pos = geom.attributes && geom.attributes.position;
     if (!pos) return geom;
 
@@ -215,18 +215,21 @@
       }
     }
 
+    let lastAppliedOpacity = 1.0;
+
     function setOpacity(opacity) {
       const clamped = Math.min(1, Math.max(0, Number.isFinite(Number(opacity)) ? Number(opacity) : 1));
+      if (Math.abs(clamped - lastAppliedOpacity) < 0.001) return;
+      lastAppliedOpacity = clamped;
       const isVisible = clamped > 0;
       for (const m of meshes) {
         if (m) m.visible = isVisible;
       }
+      // transparent=true를 고정 유지해 매 프레임 셰이더 재컴파일(needsUpdate=true) 방지
       for (const mat of materials) {
         if (mat) {
           mat.opacity = clamped;
-          mat.transparent = clamped < 1;
           mat.depthWrite = clamped >= 1;
-          mat.needsUpdate = true;
         }
       }
     }

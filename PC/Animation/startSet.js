@@ -249,6 +249,14 @@
     };
   }
 
+  function getLiveArmOpacity() {
+    const live = root.InGameFront?.getArmOpacity?.() ?? root.InGameBack?.getArmOpacity?.();
+    if (Number.isFinite(Number(live))) {
+      return Math.min(1, Math.max(0, Number(live)));
+    }
+    return layoutSnapshot.armOpacity;
+  }
+
   function restorePlayerParts(playerId) {
     const mesh = trackedMeshes?.get?.(playerId);
     if (!mesh) return;
@@ -261,7 +269,7 @@
       mesh.position.set(baseWrist.x, baseWrist.y, baseWrist.z);
       mesh.userData?.updateLimbs?.(baseWrist.x, baseWrist.y, baseWrist.z);
     }
-    mesh.userData?.setArmOpacity?.(layoutSnapshot.armOpacity);
+    mesh.userData?.setArmOpacity?.(getLiveArmOpacity());
     bodyGroup?.userData?.setShakeOffset?.(0, 0, 0);
     bodyGroup?.userData?.setRotationOffset?.(0, 0, 0);
     bodyGroup?.userData?.setOpacity?.(1.0);
@@ -290,27 +298,29 @@
 
     active = true;
     startTimeMs = getNowMs();
-    const audio = ensureReadyAudio();
-    const audioDur = Number(audio?.duration);
-    if (Number.isFinite(audioDur) && audioDur >= 0.5 && audioDur <= 30) {
-      readyAudioDurationSec = Number(audioDur.toFixed(3));
+    const smDur = Number(root.SoundManager?.getReadyDurationSec?.());
+    if (Number.isFinite(smDur) && smDur >= 0.5 && smDur <= 30) {
+      readyAudioDurationSec = Number(smDur.toFixed(3));
       root.InGameBack?.setIntroDuration?.(readyAudioDurationSec);
     }
     totalDurationSec = Math.max(0.5, Number(readyAudioDurationSec) || Number(duration) || 3.474);
     currentSetNumber = Math.max(1, Math.floor(Number(setNumber) || 1));
 
-    // 라운드 표시 애니메이션 시작 시 ready.mp3 재생 (일시정지 창 효과음 마스터 볼륨 연동)
-    if (audio) {
-      try {
-        audio.pause?.();
-        audio.currentTime = 0;
-        const masterPct = root.SoundManager?.getMasterSfxVolume?.() ?? 100;
-        audio.volume = Math.min(1, Math.max(0, masterPct / 100));
-        const playPromise = audio.play?.();
-        if (playPromise && typeof playPromise.catch === 'function') {
-          playPromise.catch(() => {});
-        }
-      } catch {}
+    // 라운드 표시 애니메이션 시작 시 Web Audio 기반 SoundManager로 ready.mp3 안정 재생
+    if (root.SoundManager?.playReady) {
+      root.SoundManager.playReady();
+    } else {
+      const audio = ensureReadyAudio();
+      if (audio) {
+        try {
+          audio.pause?.();
+          audio.currentTime = 0;
+          const playPromise = audio.play?.();
+          if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => {});
+          }
+        } catch {}
+      }
     }
     assembleIds = new Set(Array.isArray(assemblePlayers) ? assemblePlayers : ['PLAYER_1', 'PLAYER_2']);
     trackedPlayerGroups = playerGroups || null;
@@ -364,7 +374,7 @@
       mesh.quaternion?.set?.(SWORD_UP_QUAT.x, SWORD_UP_QUAT.y, SWORD_UP_QUAT.z, SWORD_UP_QUAT.w);
       mesh.position?.set?.(baseWrist.x, baseWrist.y, baseWrist.z);
       mesh.userData?.updateLimbs?.(baseWrist.x, baseWrist.y, baseWrist.z);
-      mesh.userData?.setArmOpacity?.(layoutSnapshot.armOpacity);
+      mesh.userData?.setArmOpacity?.(getLiveArmOpacity());
       bodyGroup?.userData?.setShakeOffset?.(0, 0, 0);
       headGroup?.userData?.setShakeOffset?.(0, 0, 0);
       return;
@@ -397,7 +407,7 @@
       mesh.quaternion?.set?.(SWORD_UP_QUAT.x, SWORD_UP_QUAT.y, SWORD_UP_QUAT.z, SWORD_UP_QUAT.w);
       mesh.position?.set?.(baseWrist.x, wy, baseWrist.z);
       mesh.userData?.updateLimbs?.(baseWrist.x, wy, baseWrist.z);
-      mesh.userData?.setArmOpacity?.(layoutSnapshot.armOpacity * clamp01((tSword - 0.35) / 0.45));
+      mesh.userData?.setArmOpacity?.(getLiveArmOpacity() * clamp01((tSword - 0.35) / 0.45));
     }
 
     // 3) 머리 (Head) 위에서 내려와 목 위에 결합
@@ -542,6 +552,7 @@
   }
 
   function reset() {
+    root.SoundManager?.stopReady?.();
     if (readyAudio) {
       try {
         readyAudio.pause?.();

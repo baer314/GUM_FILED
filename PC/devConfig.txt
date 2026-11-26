@@ -4,11 +4,11 @@
 
 # --- 공격 / 상태 유지시간 ---
 # 공격 판정 -> 기본공격(ATTACK) 유지시간 (초)
-dur-attack = 0.5
+dur-attack = 0.3
 # 공격 시 추가 스윙 각도 (오버슈트 후 원위치 복귀, 도 0~90)
 attack-boost-angle = 32
 # 공격 후 쿨다운 / 후딜레이 (초)
-attack-cooldown = 0.4
+attack-cooldown = 0.5
 # 공격 중 검 회전 보간 계수 (0.05~1.0, 클수록 빠름)
 attack-rotation-damping = 0.4
 # 평상시 검 회전 보간 계수 (0.05~1.0, 클수록 빠름)
@@ -19,7 +19,7 @@ accel-aim-gain = 0.45
 # 공격 성공 -> 상대 피격(HIT) 시간 (초)
 dur-attack-hit = 1.0
 # 공격 실패 -> 본인 기절(STUN) 시간 (초)
-dur-attack-fail = 1.0
+dur-attack-fail = 2
 # 패리 -> 양쪽 기절(STUN) 시간 (초)
 dur-parry-stun = 1.0
 
@@ -41,11 +41,11 @@ stun-circle-radius = 0.55
 # 플레이어 간 간격
 player-distance = 3.0
 # 피격 시 1데미지당 밀려나는 거리
-hit-pushback-distance = 1.1
+hit-pushback-distance = 0.8
 # 본인 화면 머리 불투명도 (0~1)
-self-head-opacity = 0.35
+self-head-opacity = 0.20
 # 팔 불투명도 (0~1)
-arm-opacity = 0
+arm-opacity = 0.0
 # 머리 앞뒤 위치 (어깨 기준, -앞/+뒤)
 head-offset-z = 0.0
 
@@ -62,7 +62,7 @@ camera-back-offset = 2.2
 camera-height = 1.9
 
 # --- 공격 판정 각속도 기준값 (rad/s) ---
-ang-vel-thresh-x = 5.0
+ang-vel-thresh-x = 999
 ang-vel-thresh-y = 999
 ang-vel-thresh-z = 5.0
 
@@ -70,5 +70,6 @@ ang-vel-thresh-z = 5.0
 vol-reset = 100
 vol-hum = 100
 vol-swing = 100
-vol-lose = 100
+vol-lose = 300
 vol-hit = 100
+vol-bgm = 100
