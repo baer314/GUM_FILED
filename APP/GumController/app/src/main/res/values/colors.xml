@@ -19,12 +19,12 @@
     <color name="gum_gold_dark">#C9922C</color>
     <color name="gum_on_gold">#3A2A12</color>
 
-    <!-- 플레이어 색 -->
-    <color name="gum_p1">#7EE3C6</color>
-    <color name="gum_p1_deep">#3FB596</color>
-    <color name="gum_on_p1">#103A30</color>
-    <color name="gum_p2">#F2A27E</color>
-    <color name="gum_p2_label">#F0A060</color>
+    <!-- 플레이어 색: PC(inGameFront.js, style.css)와 같은 값. 1P 민트 / 2P 피치 -->
+    <color name="gum_p1">#4FD1A5</color>
+    <color name="gum_p1_deep">#2E9E7A</color>
+    <color name="gum_on_p1">#0E3A2E</color>
+    <color name="gum_p2">#F28B66</color>
+    <color name="gum_p2_label">#F59B78</color>
 
     <!-- 라벨 · 카드 · 글자 -->
     <color name="gum_card">#B81B2321</color>

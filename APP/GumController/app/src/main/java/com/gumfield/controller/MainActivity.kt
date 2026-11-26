@@ -396,7 +396,6 @@ class MainActivity : AppCompatActivity(), WsClient.Listener, RtcClient.Listener 
         binding.orbWaiting.mode = OrbView.Mode.WAITING
         binding.orbWaiting.myColor = myColor()
         binding.orbPlay.myColor = myColor()
-        binding.orbPlay.foeColor = if (p2) GumArt.P1 else GumArt.P2
         binding.tvSensor.visibility = if (testMode) View.VISIBLE else View.GONE
         renderButtonState()
     }

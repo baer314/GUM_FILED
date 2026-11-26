@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">검 컨트롤러</string>
+    <string name="app_name">검필드</string>
     <string name="app_tag">GUM · FIELD</string>
 
     <string name="label_server">서버 주소</string>
