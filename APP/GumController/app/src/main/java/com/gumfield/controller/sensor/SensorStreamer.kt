@@ -1,10 +1,10 @@
-package com.gumfiled.controller.sensor
+package com.gumfield.controller.sensor
 
 import android.os.SystemClock
 import android.util.Log
-import com.gumfiled.controller.Config
-import com.gumfiled.controller.net.Packet
-import com.gumfiled.controller.net.Transport
+import com.gumfield.controller.Config
+import com.gumfield.controller.net.Packet
+import com.gumfield.controller.net.Transport
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit

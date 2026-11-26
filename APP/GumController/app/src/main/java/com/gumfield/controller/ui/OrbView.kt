@@ -1,4 +1,4 @@
-package com.gumfiled.controller.ui
+package com.gumfield.controller.ui
 
 import android.content.Context
 import android.graphics.Canvas
@@ -34,10 +34,6 @@ class OrbView @JvmOverloads constructor(
 
     /** 내 색 (방어막, 대기 로봇) */
     var myColor = GumArt.P1
-        set(value) { field = value; invalidate() }
-
-    /** 상대 색 (게임 화면 가운데 로봇) */
-    var foeColor = GumArt.P2
         set(value) { field = value; invalidate() }
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -100,7 +96,7 @@ class OrbView @JvmOverloads constructor(
         stroke.alpha = 90
         c.drawCircle(0f, 0f, 76f, stroke)
         stroke.alpha = 255
-        GumArt.drawBot(c, 0f, 0f, 44f, foeColor)
+        GumArt.drawBot(c, 0f, 0f, 44f, myColor)
     }
 
     private fun drawDefend(c: Canvas) {
@@ -115,7 +111,7 @@ class OrbView @JvmOverloads constructor(
         stroke.alpha = 128
         c.drawCircle(0f, 0f, 90f, stroke)
         stroke.alpha = 255
-        GumArt.drawBot(c, 0f, 0f, 44f, foeColor)
+        GumArt.drawBot(c, 0f, 0f, 44f, myColor)
     }
 
     private fun drawAlign(c: Canvas) {
@@ -149,6 +145,6 @@ class OrbView @JvmOverloads constructor(
         path.close()
         c.drawPath(path, fill)
 
-        GumArt.drawBot(c, 0f, 0f, 44f, foeColor)
+        GumArt.drawBot(c, 0f, 0f, 44f, myColor)
     }
 }

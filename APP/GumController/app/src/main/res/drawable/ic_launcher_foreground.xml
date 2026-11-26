@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 앱 아이콘 전경 (시안 C "휴대폰이 손잡이"): 폰 손잡이 + 금색 가드 + 1P 민트 칼날.
+     100단위로 그린 그림을 0.7배로 줄여 108dp 가운데 안전 영역(지름 66dp) 안에 둔다 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:scaleX="0.7"
+        android:scaleY="0.7"
+        android:translateX="19"
+        android:translateY="19">
+        <group
+            android:pivotX="50"
+            android:pivotY="50"
+            android:rotation="32">
+
+            <!-- 칼날 빛 번짐 -->
+            <path android:fillColor="#4FD1A5" android:fillAlpha="0.18"
+                android:pathData="M42,51 L42,14 L50,1.5 L58,14 L58,51 Z" />
+            <path android:fillColor="#4FD1A5" android:fillAlpha="0.45"
+                android:pathData="M43.5,50 L43.5,15 L50,4 L56.5,15 L56.5,50 Z" />
+            <!-- 칼날 -->
+            <path android:fillColor="#C9F5E6"
+                android:pathData="M45.5,50 L45.5,16 L50,8 L54.5,16 L54.5,50 Z" />
+            <path android:fillColor="#FFFFFF" android:fillAlpha="0.7"
+                android:pathData="M49.4,12 H50.6 V49 H49.4 Z" />
+
+            <!-- 금색 가드 -->
+            <path android:pathData="M34,49 H66 A3,3 0 0 1 66,55 H34 A3,3 0 0 1 34,49 Z">
+                <aapt:attr name="android:fillColor">
+                    <gradient
+                        android:type="linear"
+                        android:startX="31" android:startY="0"
+                        android:endX="69" android:endY="0">
+                        <item android:offset="0" android:color="#FFFFE7A3" />
+                        <item android:offset="0.5" android:color="#FFF0C04A" />
+                        <item android:offset="1" android:color="#FFC9922C" />
+                    </gradient>
+                </aapt:attr>
+            </path>
+
+            <!-- 폰 손잡이 -->
+            <path android:fillColor="#1B2321"
+                android:strokeColor="#3A3F52"
+                android:strokeWidth="1.2"
+                android:pathData="M44.5,55 H55.5 A4.5,4.5 0 0 1 60,59.5 V84.5 A4.5,4.5 0 0 1 55.5,89 H44.5 A4.5,4.5 0 0 1 40,84.5 V59.5 A4.5,4.5 0 0 1 44.5,55 Z" />
+            <path android:fillColor="#2A2B44"
+                android:pathData="M44.5,58.5 H55.5 A2,2 0 0 1 57.5,60.5 V81.5 A2,2 0 0 1 55.5,83.5 H44.5 A2,2 0 0 1 42.5,81.5 V60.5 A2,2 0 0 1 44.5,58.5 Z" />
+            <!-- 화면 속 캐릭터 눈 -->
+            <path android:fillColor="#4FD1A5"
+                android:pathData="M45.2,70 A1.8,1.3 0 1 0 48.8,70 A1.8,1.3 0 1 0 45.2,70 Z
+                    M51.2,70 A1.8,1.3 0 1 0 54.8,70 A1.8,1.3 0 1 0 51.2,70 Z" />
+            <path android:fillColor="#4A4F62"
+                android:pathData="M47.7,85.5 H52.3 A0.7,0.7 0 0 1 52.3,86.9 H47.7 A0.7,0.7 0 0 1 47.7,85.5 Z" />
+        </group>
+    </group>
+</vector>
