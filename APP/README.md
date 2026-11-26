@@ -14,7 +14,7 @@ APP/
 1. Android Studio에서 **Open** → `APP/GumController` 선택 (APP 폴더가 아니라 GumController). Gradle Sync가 끝날 때까지 기다립니다.
 2. 폰을 USB 디버깅으로 연결하고 ▶ Run을 누릅니다. 자이로가 없는 에뮬레이터로는 테스트할 수 없습니다.
 3. 서버 없이 먼저 확인: 앱에서 **센서 테스트** → "패킷 생성 60/s" 근처가 나오면 정상입니다.
-4. Windows에서는 프로젝트 경로에 한글이 있으면 빌드가 실패합니다 (예: `C:\dev\GUM_FILED`).
+4. Windows에서는 프로젝트 경로에 한글이 있으면 빌드가 실패합니다 (예: `C:\dev\GUM_FIELD`).
 
 ## 실제 서버로 테스트
 

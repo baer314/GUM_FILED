@@ -1,4 +1,4 @@
-package com.gumfiled.controller
+package com.gumfield.controller
 
 import android.content.Context
 import android.os.Build
@@ -18,16 +18,16 @@ import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.gumfiled.controller.databinding.ActivityMainBinding
-import com.gumfiled.controller.net.JoinInfo
-import com.gumfiled.controller.net.Packet
-import com.gumfiled.controller.net.RtcClient
-import com.gumfiled.controller.net.WsClient
-import com.gumfiled.controller.sensor.SensorSampler
-import com.gumfiled.controller.sensor.SensorStreamer
-import com.gumfiled.controller.ui.GumArt
-import com.gumfiled.controller.ui.OrbView
-import com.gumfiled.controller.ui.SpaceBackgroundView
+import com.gumfield.controller.databinding.ActivityMainBinding
+import com.gumfield.controller.net.JoinInfo
+import com.gumfield.controller.net.Packet
+import com.gumfield.controller.net.RtcClient
+import com.gumfield.controller.net.WsClient
+import com.gumfield.controller.sensor.SensorSampler
+import com.gumfield.controller.sensor.SensorStreamer
+import com.gumfield.controller.ui.GumArt
+import com.gumfield.controller.ui.OrbView
+import com.gumfield.controller.ui.SpaceBackgroundView
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import org.json.JSONObject

@@ -1,7 +1,7 @@
-package com.gumfiled.controller.net
+package com.gumfield.controller.net
 
 import android.net.Uri
-import com.gumfiled.controller.Config
+import com.gumfield.controller.Config
 import org.json.JSONObject
 
 /** QR 또는 직접 입력으로 얻은 접속 정보 */

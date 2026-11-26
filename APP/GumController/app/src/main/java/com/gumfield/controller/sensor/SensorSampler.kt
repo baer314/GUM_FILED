@@ -1,11 +1,11 @@
-package com.gumfiled.controller.sensor
+package com.gumfield.controller.sensor
 
 import android.content.Context
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import com.gumfiled.controller.Config
+import com.gumfield.controller.Config
 
 /** 한 시점의 센서값 묶음 (복사본이라 다른 스레드에서 읽어도 안전) */
 class SensorSnapshot(

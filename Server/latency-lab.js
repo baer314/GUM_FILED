@@ -168,7 +168,7 @@ async function main() {
   assert(['clean', 'jitter', 'stall'].includes(scenario), 'Choose clean, jitter, or stall');
   if (reportFile) {
     const relative = path.relative(path.resolve(__dirname, '..'), path.resolve(reportFile));
-    assert(relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative), 'Store reports outside GUM_FILED');
+    assert(relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative), 'Store reports outside GUM_FIELD');
   }
   const result = await run(scenario, baseline);
   const json = JSON.stringify(result, null, 2) + '\n';

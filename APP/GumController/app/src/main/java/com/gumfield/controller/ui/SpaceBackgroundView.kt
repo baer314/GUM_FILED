@@ -1,4 +1,4 @@
-package com.gumfiled.controller.ui
+package com.gumfield.controller.ui
 
 import android.content.Context
 import android.graphics.Canvas
@@ -9,7 +9,7 @@ import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.View
 import androidx.core.content.ContextCompat
-import com.gumfiled.controller.R
+import com.gumfield.controller.R
 import kotlin.random.Random
 
 /**
