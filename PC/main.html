@@ -61,9 +61,20 @@
   <section id="ingame-view" class="ingame-view" hidden>
     <canvas id="ingame-canvas" class="ingame-canvas"></canvas>
     <div class="ingame-split-ui" aria-hidden="true">
-      <div class="split-pane-label split-left-label">PLAYER 1 VIEW</div>
       <div class="split-divider"></div>
-      <div class="split-pane-label split-right-label">PLAYER 2 VIEW</div>
+      <div id="match-scoreboard" class="match-scoreboard" aria-label="라운드 승점">
+        <div class="score-group score-p1">
+          <span class="score-dot" data-player="PLAYER_1" data-index="1"></span>
+          <span class="score-dot" data-player="PLAYER_1" data-index="2"></span>
+          <span class="score-dot" data-player="PLAYER_1" data-index="3"></span>
+        </div>
+        <span id="score-round-label" class="score-round-label">R1</span>
+        <div class="score-group score-p2">
+          <span class="score-dot" data-player="PLAYER_2" data-index="1"></span>
+          <span class="score-dot" data-player="PLAYER_2" data-index="2"></span>
+          <span class="score-dot" data-player="PLAYER_2" data-index="3"></span>
+        </div>
+      </div>
       <div id="p1-danger-glow" class="split-danger-glow split-danger-left" hidden><span class="danger-exclamation">!</span></div>
       <div id="p2-danger-glow" class="split-danger-glow split-danger-right" hidden><span class="danger-exclamation">!</span></div>
       <div id="p1-set-result" class="split-result-banner split-result-left" hidden></div>
@@ -86,7 +97,40 @@
       </div>
     </div>
     <div class="ingame-top-bar">
-      <button id="back-to-lobby" type="button" class="overlay-btn">대기방 보기</button>
+      <button id="pause-game-btn" type="button" class="overlay-btn">일시정지</button>
+    </div>
+    <div id="pause-modal" class="pause-modal" hidden role="dialog" aria-modal="true" aria-label="일시정지 메뉴">
+      <div class="pause-card">
+        <p class="pause-eyebrow">GUM FIELD · PAUSED</p>
+        <h2 class="pause-title">일시정지</h2>
+        <div class="pause-section">
+          <p class="pause-section-label">플레이어 연결 상태</p>
+          <div id="pause-player-status" class="pause-status-list"></div>
+        </div>
+        <div class="pause-section">
+          <div class="pause-volume-header">
+            <label for="pause-sfx-volume" class="pause-section-label">효과음 볼륨</label>
+            <span id="pause-sfx-volume-val" class="pause-volume-val">100%</span>
+          </div>
+          <input id="pause-sfx-volume" class="pause-volume-slider" type="range" min="0" max="100" step="1" value="100">
+        </div>
+        <div class="pause-actions">
+          <button id="pause-resume-btn" type="button" class="pause-resume-btn">계속하기</button>
+          <button id="back-to-lobby" type="button" class="pause-lobby-btn">대기방 가기</button>
+        </div>
+      </div>
+    </div>
+    <div id="swap-views-zone" class="swap-views-zone">
+      <button id="swap-views-btn" type="button" class="swap-views-btn" title="플레이어 좌우 화면 전환">⇄ 화면 전환</button>
+    </div>
+    <div id="match-winner-banner" class="match-winner-banner" hidden>
+      <p class="match-winner-eyebrow">WINNER</p>
+      <h2 id="match-winner-name" class="match-winner-name">PLAYER 1</h2>
+      <p id="match-winner-score" class="match-winner-score">3 : 0</p>
+    </div>
+    <div id="match-end-actions" class="match-end-actions" hidden>
+      <button id="rematch-btn" type="button" class="rematch-btn">다시 하기</button>
+      <button id="match-back-to-lobby-btn" type="button" class="match-lobby-btn">대기방으로 돌아가기</button>
     </div>
   </section>
 
@@ -101,8 +145,10 @@
   <script src="/Graphic/Sword.js"></script>
   <script src="/Effect/DoubleDamageEffect.js"></script>
   <script src="/Effect/HitSparkEffect.js"></script>
+  <script src="/soundManager.js"></script>
   <script src="/Animation/startSet.js"></script>
   <script src="/Animation/endSet.js"></script>
+  <script src="/Animation/endMatch.js"></script>
   <script src="/inGameDev.js"></script>
   <script src="/inGameFront.js"></script>
   <script src="/inGameBack.js"></script>

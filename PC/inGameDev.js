@@ -3,6 +3,9 @@
   const $ = (id) => document.getElementById(id);
   let mounted = false;
   let keyBound = false;
+  let configLoaded = false;
+  let configLoadingPromise = null;
+  const DEV_CONFIG_URL = '/devConfig.txt';
 
   const DEV_INPUT_IDS = [
     'dur-attack',
@@ -34,6 +37,11 @@
     'ang-vel-thresh-x',
     'ang-vel-thresh-y',
     'ang-vel-thresh-z',
+    'vol-reset',
+    'vol-hum',
+    'vol-swing',
+    'vol-lose',
+    'vol-hit',
   ];
 
   const DEV_PANEL_MARKUP = `
@@ -59,7 +67,10 @@
           <p class="ingame-eyebrow">REAL-TIME TUNING (KEY 0)</p>
           <h2>개발자 실시간 설정</h2>
         </div>
-        <button id="close-duration-panel" type="button" class="overlay-btn">닫기</button>
+        <div style="display:flex;gap:6px">
+          <button id="reload-dev-config" type="button" class="overlay-btn">txt 불러오기</button>
+          <button id="close-duration-panel" type="button" class="overlay-btn">닫기</button>
+        </div>
       </div>
       <div class="duration-form">
         <label>공격 판정 → 기본공격(ATTACK) 유지시간 (초)
@@ -144,6 +155,21 @@
             <input id="ang-vel-thresh-y" type="number" min="0" max="100" step="0.5" value="5.0" aria-label="각속도 Y 기준값">
             <input id="ang-vel-thresh-z" type="number" min="0" max="100" step="0.5" value="5.0" aria-label="각속도 Z 기준값">
           </div>
+        </label>
+        <label>reset 효과음 볼륨 (%, 0~300)
+          <input id="vol-reset" type="number" min="0" max="300" step="5" value="100">
+        </label>
+        <label>hum 효과음 볼륨 (%, 0~300)
+          <input id="vol-hum" type="number" min="0" max="300" step="5" value="100">
+        </label>
+        <label>swing 효과음 볼륨 (%, 0~300)
+          <input id="vol-swing" type="number" min="0" max="300" step="5" value="100">
+        </label>
+        <label>lose 효과음 볼륨 (%, 0~300)
+          <input id="vol-lose" type="number" min="0" max="300" step="5" value="100">
+        </label>
+        <label>hit 효과음 볼륨 (%, 0~300)
+          <input id="vol-hit" type="number" min="0" max="300" step="5" value="100">
         </label>
       </div>
     </aside>
@@ -386,6 +412,14 @@
       if ($('ang-vel-thresh-y')) $('ang-vel-thresh-y').value = String(angThresh.y ?? 5.0);
       if ($('ang-vel-thresh-z')) $('ang-vel-thresh-z').value = String(angThresh.z ?? 5.0);
     }
+    const sfxVols = root.SoundManager?.getAllCategoryVolumes?.();
+    if (sfxVols) {
+      if ($('vol-reset')) $('vol-reset').value = String(sfxVols.reset ?? 100);
+      if ($('vol-hum')) $('vol-hum').value = String(sfxVols.hum ?? 100);
+      if ($('vol-swing')) $('vol-swing').value = String(sfxVols.swing ?? 100);
+      if ($('vol-lose')) $('vol-lose').value = String(sfxVols.lose ?? 100);
+      if ($('vol-hit')) $('vol-hit').value = String(sfxVols.hit ?? 100);
+    }
   }
 
   function applyDurationFromInputs() {
@@ -515,6 +549,11 @@
       y: $('ang-vel-thresh-y')?.value,
       z: $('ang-vel-thresh-z')?.value,
     });
+    if ($('vol-reset')) root.SoundManager?.setCategoryVolume?.('reset', $('vol-reset').value);
+    if ($('vol-hum')) root.SoundManager?.setCategoryVolume?.('hum', $('vol-hum').value);
+    if ($('vol-swing')) root.SoundManager?.setCategoryVolume?.('swing', $('vol-swing').value);
+    if ($('vol-lose')) root.SoundManager?.setCategoryVolume?.('lose', $('vol-lose').value);
+    if ($('vol-hit')) root.SoundManager?.setCategoryVolume?.('hit', $('vol-hit').value);
   }
 
   function toggleDurationPanel(forceOpen) {
@@ -595,6 +634,9 @@
       $(inputId)?.addEventListener?.('change', applyDurationFromInputs);
     }
 
+    if ($('reload-dev-config')) {
+      $('reload-dev-config').onclick = () => loadConfigDefaults({ force: true });
+    }
     if ($('close-duration-panel')) {
       $('close-duration-panel').onclick = () => toggleDurationPanel(false);
     }
@@ -628,10 +670,73 @@
     });
   }
 
+  function parseDevConfigText(text) {
+    const result = {};
+    if (typeof text !== 'string') return result;
+    const validIds = new Set(DEV_INPUT_IDS);
+    for (const rawLine of text.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#') || line.startsWith('//')) continue;
+      const eqIdx = line.indexOf('=');
+      if (eqIdx <= 0) continue;
+      const key = line.slice(0, eqIdx).trim();
+      let valStr = line.slice(eqIdx + 1).trim();
+      const commentIdx = valStr.search(/(#|\/\/)/);
+      if (commentIdx >= 0) {
+        valStr = valStr.slice(0, commentIdx).trim();
+      }
+      if (!validIds.has(key)) continue;
+      const num = Number(valStr);
+      if (Number.isFinite(num)) {
+        result[key] = num;
+      }
+    }
+    return result;
+  }
+
+  function applyConfigValues(config = {}) {
+    let appliedAny = false;
+    for (const [key, val] of Object.entries(config)) {
+      if (!Number.isFinite(Number(val))) continue;
+      const inputEl = $(key);
+      if (inputEl) {
+        inputEl.value = String(val);
+      }
+      appliedAny = true;
+    }
+    if (appliedAny) {
+      applyDurationFromInputs();
+      syncDurationInputs();
+    }
+    return appliedAny;
+  }
+
+  async function loadConfigDefaults({ force = false } = {}) {
+    if (typeof root.fetch !== 'function') return null;
+    if (configLoaded && !force) return null;
+    if (configLoadingPromise && !force) return configLoadingPromise;
+
+    configLoadingPromise = root.fetch(DEV_CONFIG_URL, { cache: 'no-store' })
+      .then((res) => (res && res.ok ? res.text() : ''))
+      .then((text) => {
+        if (!text) return null;
+        const parsed = parseDevConfigText(text);
+        configLoaded = true;
+        applyConfigValues(parsed);
+        return parsed;
+      })
+      .catch(() => null)
+      .finally(() => {
+        configLoadingPromise = null;
+      });
+    return configLoadingPromise;
+  }
+
   function init() {
     mountDevUI();
     bindDevKeys();
     syncDurationInputs();
+    loadConfigDefaults();
   }
 
   root.InGameDev = {
@@ -639,6 +744,8 @@
     mountDevUI,
     bindDevKeys,
     syncDurationInputs,
+    parseDevConfigText,
+    loadConfigDefaults,
     toggleOverlay,
     toggleFrontalSwordHud,
     toggleDurationPanel,

@@ -1,0 +1,74 @@
+# GUM FIELD 개발자 실시간 설정 기본값 파일 (PC/devConfig.txt)
+# 형식: 설정키 = 숫자값 (# 또는 // 로 시작하는 줄은 주석)
+# 이 파일을 수정한 뒤 브라우저를 새로고침하거나, 개발자 패널(0 키)에서 [txt 불러오기]를 누르면 즉시 반영됩니다.
+
+# --- 공격 / 상태 유지시간 ---
+# 공격 판정 -> 기본공격(ATTACK) 유지시간 (초)
+dur-attack = 0.5
+# 공격 시 추가 스윙 각도 (오버슈트 후 원위치 복귀, 도 0~90)
+attack-boost-angle = 32
+# 공격 후 쿨다운 / 후딜레이 (초)
+attack-cooldown = 0.4
+# 공격 중 검 회전 보간 계수 (0.05~1.0, 클수록 빠름)
+attack-rotation-damping = 0.4
+# 평상시 검 회전 보간 계수 (0.05~1.0, 클수록 빠름)
+sensor-tilt-smoothing = 0.65
+# 선형가속도 보조 조준 감도 (0~3.0, 0=끔)
+accel-aim-gain = 0.45
+
+# 공격 성공 -> 상대 피격(HIT) 시간 (초)
+dur-attack-hit = 1.0
+# 공격 실패 -> 본인 기절(STUN) 시간 (초)
+dur-attack-fail = 1.0
+# 패리 -> 양쪽 기절(STUN) 시간 (초)
+dur-parry-stun = 1.0
+
+# --- 팔 / 검 / 방어 / 기절 ---
+# 기울기 대비 팔 움직임 배수
+arm-swing-multiplier = 0.55
+# 공격 판정 시 팔 늘어나는 정도
+attack-arm-extension = 0.65
+# 방어 시 검 손잡이 방향 이동 거리
+defense-sword-offset = 1.2
+# 방어 판정 검 교차 각도 허용치 (90도 +- 도, 0~90)
+defense-angle-threshold = 15
+# 방어 판정 최소 검 선분 길이 (0~2.70)
+defense-min-segment-length = 1.0
+# 기절 시 중앙 진입금지 원 반지름
+stun-circle-radius = 0.55
+
+# --- 배치 / 외형 / 히트박스 ---
+# 플레이어 간 간격
+player-distance = 3.0
+# 피격 시 1데미지당 밀려나는 거리
+hit-pushback-distance = 1.1
+# 본인 화면 머리 불투명도 (0~1)
+self-head-opacity = 0.35
+# 팔 불투명도 (0~1)
+arm-opacity = 0
+# 머리 앞뒤 위치 (어깨 기준, -앞/+뒤)
+head-offset-z = 0.0
+
+# 머리 히트박스 크기 (가로 X / 세로 아래 Y / 세로 위쪽 확장 yUp / 앞뒤 Z)
+head-box-x = 1
+head-box-y = 1.9
+head-box-y-up = 0.3
+head-box-z = 1
+
+# --- 카메라 ---
+# 카메라 앞뒤 거리 (플레이어 뒤쪽 기준)
+camera-back-offset = 2.2
+# 카메라 위아래 높이
+camera-height = 1.9
+
+# --- 공격 판정 각속도 기준값 (rad/s) ---
+ang-vel-thresh-x = 5.0
+ang-vel-thresh-y = 999
+ang-vel-thresh-z = 5.0
+
+# --- 효과음 개별 볼륨 (%, 0~300) ---
+vol-reset = 100
+vol-hum = 100
+vol-swing = 100
+vol-lose = 100
+vol-hit = 100

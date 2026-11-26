@@ -2,9 +2,13 @@
 (function (root) {
   let active = false;
   let startTimeMs = 0;
-  let totalDurationSec = 5.0;
+  let totalDurationSec = 3.474; // /Sound/ready.mp3 기본 길이 (메타데이터 로드 시 자동 갱신)
   let currentSetNumber = 1;
   let assembleIds = new Set();
+
+  let readyAudio = null;
+  let readyAudioDurationSec = 3.474;
+  const READY_AUDIO_URL = '/Sound/ready.mp3';
 
   let styleInjected = false;
   let roundBannerEl = null;
@@ -26,15 +30,44 @@
     armOpacity: 1.0,
   };
 
-  // 타임라인 (총 5.0초):
-  // 0.00 ~ 3.50초: 옆면(+Z)에서 카메라가 점점 다가오며 몸통 -> 검(위쪽 정렬) -> 머리 순으로 위에서 내려와 조립
-  // 3.50 ~ 5.00초: 각 플레이어의 3인칭 시점 카메라로 자연스럽게 곡선 이동 전환
-  const APPROACH_END_SEC = 3.5;
+  // 타임라인 비율 (ready.mp3 길이에 맞춰 자동 스케일링):
+  // 0% ~ 70%: 옆면(+Z)에서 카메라가 점점 다가오며 몸통 -> 검(위쪽 정렬) -> 머리 순으로 위에서 내려와 조립
+  // 70% ~ 100%: 각 플레이어의 3인칭 시점 카메라로 자연스럽게 곡선 이동 전환
+  const APPROACH_END_RATIO = 0.70;
   const DROP_HEIGHT = 4.8;
 
-  const STAGE_BODY = { start: 0.25, end: 1.25 };
-  const STAGE_SWORD = { start: 1.15, end: 2.15 };
-  const STAGE_HEAD = { start: 2.05, end: 3.15 };
+  const STAGE_BODY_RATIO = { start: 0.05, end: 0.25 };
+  const STAGE_SWORD_RATIO = { start: 0.22, end: 0.44 };
+  const STAGE_HEAD_RATIO = { start: 0.41, end: 0.64 };
+
+  function getApproachEndSec() {
+    return totalDurationSec * APPROACH_END_RATIO;
+  }
+
+  function getStageWindow(ratioStage) {
+    return {
+      start: totalDurationSec * ratioStage.start,
+      end: totalDurationSec * ratioStage.end,
+    };
+  }
+
+  function ensureReadyAudio() {
+    if (readyAudio || typeof root.Audio !== 'function') return readyAudio;
+    readyAudio = new root.Audio(READY_AUDIO_URL);
+    readyAudio.preload = 'auto';
+    readyAudio.addEventListener?.('loadedmetadata', () => {
+      const dur = Number(readyAudio?.duration);
+      if (Number.isFinite(dur) && dur >= 0.5 && dur <= 30) {
+        readyAudioDurationSec = Number(dur.toFixed(3));
+        totalDurationSec = readyAudioDurationSec;
+        root.InGameBack?.setIntroDuration?.(readyAudioDurationSec);
+      }
+    });
+    return readyAudio;
+  }
+
+  // 페이지 로드 시 ready.mp3 메타데이터(길이)를 미리 읽어 둠
+  ensureReadyAudio();
 
   // 검날(-Z)이 위쪽(+Y)을 똑바로 향하도록 하는 X축 +90도 회전 쿼터니언
   const SWORD_UP_QUAT = { x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 };
@@ -242,7 +275,7 @@
     const {
       setNumber = 1,
       assemblePlayers = ['PLAYER_1', 'PLAYER_2'],
-      duration = 5.0,
+      duration = readyAudioDurationSec,
       playerGroups,
       meshes,
       cameraP1,
@@ -257,8 +290,28 @@
 
     active = true;
     startTimeMs = getNowMs();
-    totalDurationSec = Math.max(1.0, Number(duration) || 5.0);
+    const audio = ensureReadyAudio();
+    const audioDur = Number(audio?.duration);
+    if (Number.isFinite(audioDur) && audioDur >= 0.5 && audioDur <= 30) {
+      readyAudioDurationSec = Number(audioDur.toFixed(3));
+      root.InGameBack?.setIntroDuration?.(readyAudioDurationSec);
+    }
+    totalDurationSec = Math.max(0.5, Number(readyAudioDurationSec) || Number(duration) || 3.474);
     currentSetNumber = Math.max(1, Math.floor(Number(setNumber) || 1));
+
+    // 라운드 표시 애니메이션 시작 시 ready.mp3 재생 (일시정지 창 효과음 마스터 볼륨 연동)
+    if (audio) {
+      try {
+        audio.pause?.();
+        audio.currentTime = 0;
+        const masterPct = root.SoundManager?.getMasterSfxVolume?.() ?? 100;
+        audio.volume = Math.min(1, Math.max(0, masterPct / 100));
+        const playPromise = audio.play?.();
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch(() => {});
+        }
+      } catch {}
+    }
     assembleIds = new Set(Array.isArray(assemblePlayers) ? assemblePlayers : ['PLAYER_1', 'PLAYER_2']);
     trackedPlayerGroups = playerGroups || null;
     trackedMeshes = meshes || null;
@@ -318,7 +371,8 @@
     }
 
     // 1) 몸통 (Body) 위에서 내려와 안착
-    const tBody = (elapsedSec - STAGE_BODY.start) / (STAGE_BODY.end - STAGE_BODY.start);
+    const stageBody = getStageWindow(STAGE_BODY_RATIO);
+    const tBody = (elapsedSec - stageBody.start) / Math.max(0.05, stageBody.end - stageBody.start);
     if (tBody <= 0) {
       bodyGroup?.userData?.setOpacity?.(0);
       bodyGroup?.userData?.setShakeOffset?.(0, DROP_HEIGHT, 0);
@@ -330,7 +384,8 @@
     }
 
     // 2) 검 (Sword) & 양팔 위에서 내려와 결합 (센서값과 무관하게 검이 항상 위쪽을 향함)
-    const tSword = (elapsedSec - STAGE_SWORD.start) / (STAGE_SWORD.end - STAGE_SWORD.start);
+    const stageSword = getStageWindow(STAGE_SWORD_RATIO);
+    const tSword = (elapsedSec - stageSword.start) / Math.max(0.05, stageSword.end - stageSword.start);
     if (tSword <= 0) {
       mesh.visible = false;
       mesh.userData?.setArmOpacity?.(0);
@@ -346,7 +401,8 @@
     }
 
     // 3) 머리 (Head) 위에서 내려와 목 위에 결합
-    const tHead = (elapsedSec - STAGE_HEAD.start) / (STAGE_HEAD.end - STAGE_HEAD.start);
+    const stageHead = getStageWindow(STAGE_HEAD_RATIO);
+    const tHead = (elapsedSec - stageHead.start) / Math.max(0.05, stageHead.end - stageHead.start);
     if (tHead <= 0) {
       headGroup?.userData?.setOpacity?.(0);
       headGroup?.userData?.setShakeOffset?.(0, DROP_HEIGHT, 0);
@@ -359,18 +415,20 @@
   }
 
   function getTransitionProgress(elapsedSec) {
-    const transDur = Math.max(0.2, totalDurationSec - APPROACH_END_SEC);
-    return smoothstep((elapsedSec - APPROACH_END_SEC) / transDur);
+    const approachEnd = getApproachEndSec();
+    const transDur = Math.max(0.2, totalDurationSec - approachEnd);
+    return smoothstep((elapsedSec - approachEnd) / transDur);
   }
 
   function updateFrame() {
     if (!active) return;
     const elapsedSec = Math.max(0, (getNowMs() - startTimeMs) / 1000);
+    const approachEnd = getApproachEndSec();
 
     // 0) 중앙 라운드 배너 표시 및 카메라 전환 시 자연스럽게 페이드아웃
     if (roundBannerEl) {
-      const fadeStart = APPROACH_END_SEC + 0.15;
-      const fadeEnd = Math.max(fadeStart + 0.4, totalDurationSec - 0.35);
+      const fadeStart = approachEnd + 0.1;
+      const fadeEnd = Math.max(fadeStart + 0.3, totalDurationSec - 0.2);
       if (elapsedSec <= fadeStart) {
         roundBannerEl.hidden = false;
         roundBannerEl.style.opacity = '1';
@@ -416,8 +474,8 @@
       z: 0,
     };
 
-    if (elapsedSec <= APPROACH_END_SEC) {
-      const a = smoothstep(elapsedSec / APPROACH_END_SEC);
+    if (elapsedSec <= approachEnd) {
+      const a = smoothstep(elapsedSec / Math.max(0.1, approachEnd));
       const cx = lerp(sideStart.x, sideEnd.x, a);
       const cy = lerp(sideStart.y, sideEnd.y, a);
       const cz = lerp(sideStart.z, sideEnd.z, a);
@@ -466,7 +524,7 @@
   function getSelfOpacityForCamera(playerId, baseSelfOpacity) {
     if (!active) return baseSelfOpacity;
     const elapsedSec = Math.max(0, (getNowMs() - startTimeMs) / 1000);
-    if (elapsedSec <= APPROACH_END_SEC) {
+    if (elapsedSec <= getApproachEndSec()) {
       return 1.0;
     }
     const u = getTransitionProgress(elapsedSec);
@@ -477,13 +535,19 @@
   function getPartRevealOpacity(playerId, part) {
     if (!active || !assembleIds.has(playerId)) return 1.0;
     const elapsedSec = Math.max(0, (getNowMs() - startTimeMs) / 1000);
-    const stage = part === 'head' ? STAGE_HEAD : STAGE_BODY;
-    const t = (elapsedSec - stage.start) / (stage.end - stage.start);
+    const stage = getStageWindow(part === 'head' ? STAGE_HEAD_RATIO : STAGE_BODY_RATIO);
+    const t = (elapsedSec - stage.start) / Math.max(0.05, stage.end - stage.start);
     if (t <= 0) return 0;
     return Math.min(1, t * 4);
   }
 
   function reset() {
+    if (readyAudio) {
+      try {
+        readyAudio.pause?.();
+        readyAudio.currentTime = 0;
+      } catch {}
+    }
     if (trackedMeshes) {
       for (const id of ['PLAYER_1', 'PLAYER_2']) {
         restorePlayerParts(id);

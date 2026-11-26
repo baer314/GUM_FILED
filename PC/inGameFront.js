@@ -24,6 +24,7 @@
   let currentDefenseAngleThreshold = 35;
   let currentStunCircleRadius = 0.55;
   let currentArenaShiftX = 0;
+  let viewsSwapped = false;
   const STUN_CAMERA_PULLBACK_MAX = 0.55;
   const HIT_CAMERA_PULLBACK_MAX = 1.0;
   const BASE_CAMERA_FOV = 60;
@@ -36,7 +37,17 @@
     PLAYER_1: 0,
     PLAYER_2: 0,
   };
+  const lastAlignTimestamps = {
+    PLAYER_1: 0,
+    PLAYER_2: 0,
+  };
+  const prevPlayerStates = {
+    PLAYER_1: 'IDLE',
+    PLAYER_2: 'IDLE',
+  };
   let lastClashTimestamp = 0;
+  let lastPhase = '';
+  let pauseOpen = false;
   const cameraShakeOffsets = {
     PLAYER_1: { x: 0, y: 0, z: 0 },
     PLAYER_2: { x: 0, y: 0, z: 0 },
@@ -64,6 +75,38 @@
     return PLAYER_BASE_Y + FLOAT_BASE_LIFT + Math.sin(t) * FLOAT_AMPLITUDE;
   }
 
+  function updateLobbySwordIdle(nowMs) {
+    const THREE = root.THREE;
+    if (!THREE?.Euler) return;
+    const t = nowMs / 1000;
+    const configs = [
+      { id: 'PLAYER_1', phase: 0, speed: 1.25 },
+      { id: 'PLAYER_2', phase: Math.PI * 0.85, speed: 1.15 },
+    ];
+    for (const cfg of configs) {
+      const mesh = meshes.get(cfg.id);
+      if (!mesh) continue;
+      const baseWrist = mesh.userData?.baseWristOffset || { x: 0, y: 0.12, z: -0.95 };
+      const p = t * cfg.speed + cfg.phase;
+
+      // 좌우 부드러운 검 휘두르기 + 완만한 8자 상하 리듬
+      const sway = Math.sin(p);
+      const figure8 = Math.sin(p * 2);
+      const yaw = sway * 0.62;
+      const pitch = 0.24 + figure8 * 0.18;
+      const roll = -Math.cos(p) * 0.26;
+
+      if (mesh.quaternion?.setFromEuler) {
+        mesh.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
+      }
+      const wx = baseWrist.x + sway * 0.30;
+      const wy = baseWrist.y + figure8 * 0.08;
+      const wz = baseWrist.z + Math.abs(sway) * 0.08;
+      mesh.position?.set?.(wx, wy, wz);
+      mesh.userData?.updateLimbs?.(wx, wy, wz);
+    }
+  }
+
   function updatePlayerFloatPositions() {
     const nowMs = typeof performance !== 'undefined' && typeof performance.now === 'function'
       ? performance.now()
@@ -83,7 +126,7 @@
     if (Number.isFinite(num) && num > 0) {
       currentPlayerDistance = num;
     }
-    if (root.EndSetAnimation?.isActive?.() || root.StartSetAnimation?.isActive?.()) {
+    if (root.EndMatchAnimation?.isActive?.() || root.EndSetAnimation?.isActive?.() || root.StartSetAnimation?.isActive?.()) {
       return;
     }
     const halfDist = currentPlayerDistance / 2;
@@ -351,6 +394,20 @@
 
   function renderSplitView() {
     if (!renderer || !scene || !cameraP1 || !cameraP2) return;
+    const width = root.innerWidth || 1280;
+    const height = root.innerHeight || 720;
+    const isMatchEndActive = Boolean(root.EndMatchAnimation?.isActive?.());
+    if (isMatchEndActive) {
+      root.EndMatchAnimation.updateFrame(width, height);
+      root.HitSparkEffect?.update?.();
+      setPlayerHeadOpacity('PLAYER_1', 1.0);
+      setPlayerHeadOpacity('PLAYER_2', 1.0);
+      renderer.setScissorTest?.(false);
+      renderer.setViewport?.(0, 0, width, height);
+      renderer.render(scene, cameraP1);
+      return;
+    }
+
     const isStartSetActive = Boolean(root.StartSetAnimation?.isActive?.());
     const isEndSetActive = Boolean(root.EndSetAnimation?.isActive?.());
     if (isStartSetActive) {
@@ -359,10 +416,14 @@
       root.EndSetAnimation.updateFrame(root.THREE);
     } else {
       updatePlayerFloatPositions();
+      if ($('ingame-view')?.classList?.contains?.('lobby-bg-mode')) {
+        const nowMs = typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : Date.now();
+        updateLobbySwordIdle(nowMs);
+      }
     }
     root.HitSparkEffect?.update?.();
-    const width = root.innerWidth || 1280;
-    const height = root.innerHeight || 720;
     const halfWidth = Math.max(1, Math.floor(width / 2));
     const rightWidth = Math.max(1, width - halfWidth);
     const endLoserId = isEndSetActive ? root.EndSetAnimation?.getLoserId?.() : null;
@@ -375,19 +436,32 @@
 
     renderer.setScissorTest?.(true);
 
-    // 좌측: 플레이어 1 화면 (인트로/피니시 연출 시 투명도 자동 보간)
-    setPlayerHeadOpacity('PLAYER_1', p1SelfOpacity);
-    setPlayerHeadOpacity('PLAYER_2', 1.0);
-    renderer.setViewport?.(0, 0, halfWidth, height);
-    renderer.setScissor?.(0, 0, halfWidth, height);
-    renderer.render(scene, cameraP1);
+    // 좌측 뷰포트 (기본: P1, 화면 전환 시: P2)
+    if (!viewsSwapped) {
+      setPlayerHeadOpacity('PLAYER_1', p1SelfOpacity);
+      setPlayerHeadOpacity('PLAYER_2', 1.0);
+      renderer.setViewport?.(0, 0, halfWidth, height);
+      renderer.setScissor?.(0, 0, halfWidth, height);
+      renderer.render(scene, cameraP1);
 
-    // 우측: 플레이어 2 화면 (인트로/피니시 연출 시 투명도 자동 보간)
-    setPlayerHeadOpacity('PLAYER_1', 1.0);
-    setPlayerHeadOpacity('PLAYER_2', p2SelfOpacity);
-    renderer.setViewport?.(halfWidth, 0, rightWidth, height);
-    renderer.setScissor?.(halfWidth, 0, rightWidth, height);
-    renderer.render(scene, cameraP2);
+      setPlayerHeadOpacity('PLAYER_1', 1.0);
+      setPlayerHeadOpacity('PLAYER_2', p2SelfOpacity);
+      renderer.setViewport?.(halfWidth, 0, rightWidth, height);
+      renderer.setScissor?.(halfWidth, 0, rightWidth, height);
+      renderer.render(scene, cameraP2);
+    } else {
+      setPlayerHeadOpacity('PLAYER_1', 1.0);
+      setPlayerHeadOpacity('PLAYER_2', p2SelfOpacity);
+      renderer.setViewport?.(0, 0, halfWidth, height);
+      renderer.setScissor?.(0, 0, halfWidth, height);
+      renderer.render(scene, cameraP2);
+
+      setPlayerHeadOpacity('PLAYER_1', p1SelfOpacity);
+      setPlayerHeadOpacity('PLAYER_2', 1.0);
+      renderer.setViewport?.(halfWidth, 0, rightWidth, height);
+      renderer.setScissor?.(halfWidth, 0, rightWidth, height);
+      renderer.render(scene, cameraP1);
+    }
 
     renderer.setScissorTest?.(false);
   }
@@ -413,13 +487,106 @@
     if (!animId && renderer) animate();
   }
 
+  function applyViewsSwappedUI() {
+    const splitUi = document.querySelector?.('.ingame-split-ui');
+    splitUi?.classList?.toggle?.('is-swapped', viewsSwapped);
+  }
+
+  function toggleViewsSwapped(force) {
+    viewsSwapped = force !== undefined ? Boolean(force) : !viewsSwapped;
+    applyViewsSwappedUI();
+    renderSplitView();
+    return viewsSwapped;
+  }
+
+  function setPauseMenuOpen(open) {
+    pauseOpen = Boolean(open);
+    const modal = $('pause-modal');
+    if (modal) modal.hidden = !pauseOpen;
+    root.InGameBack?.setPaused?.(pauseOpen);
+    if (pauseOpen) {
+      root.SoundManager?.setHumPlaying?.(false);
+    }
+    return pauseOpen;
+  }
+
+  function renderPausePlayerStatus(players = [], rates = new Map()) {
+    const listEl = $('pause-player-status');
+    if (!listEl) return;
+    const byId = new Map();
+    for (const p of players) {
+      if (p && p.id) byId.set(p.id, p);
+    }
+    listEl.replaceChildren();
+    for (const id of ['PLAYER_1', 'PLAYER_2']) {
+      const info = byId.get(id);
+      const row = document.createElement('div');
+      row.className = 'pause-status-row';
+
+      const nameWrap = document.createElement('span');
+      nameWrap.className = 'pause-status-name';
+      const dot = document.createElement('span');
+      dot.className = `pause-status-dot ${id === 'PLAYER_1' ? 'is-p1' : 'is-p2'}`;
+      const label = document.createElement('span');
+      label.textContent = id === 'PLAYER_1' ? 'PLAYER 1' : 'PLAYER 2';
+      nameWrap.append(dot, label);
+
+      const badge = document.createElement('span');
+      const isOnline = Boolean(info && (info.state === 'ready' || info.state === 'joined' || info.state === 'open'));
+      const rateVal = Number(rates?.get?.(id) || 0);
+      badge.className = `pause-status-badge ${isOnline ? 'is-online' : 'is-offline'}`;
+      badge.textContent = isOnline
+        ? `연결됨 (${rateVal.toFixed(0)}Hz)`
+        : (info?.state ? `상태: ${info.state}` : '미연결');
+
+      row.append(nameWrap, badge);
+      listEl.append(row);
+    }
+  }
+
   function start(onBackToLobby) {
     if ($('lobby-view')) $('lobby-view').hidden = true;
     if ($('ingame-view')) {
       $('ingame-view').hidden = false;
       $('ingame-view').classList.remove('lobby-bg-mode');
     }
-    if ($('back-to-lobby')) $('back-to-lobby').onclick = onBackToLobby;
+    setPauseMenuOpen(false);
+    if ($('pause-game-btn')) {
+      $('pause-game-btn').onclick = () => setPauseMenuOpen(!pauseOpen);
+    }
+    if ($('pause-resume-btn')) {
+      $('pause-resume-btn').onclick = () => setPauseMenuOpen(false);
+    }
+    if ($('back-to-lobby')) {
+      $('back-to-lobby').onclick = () => {
+        setPauseMenuOpen(false);
+        onBackToLobby?.();
+      };
+    }
+    const sfxSlider = $('pause-sfx-volume');
+    const sfxValEl = $('pause-sfx-volume-val');
+    if (sfxSlider) {
+      const curMaster = root.SoundManager?.getMasterSfxVolume?.() ?? 100;
+      sfxSlider.value = String(curMaster);
+      if (sfxValEl) sfxValEl.textContent = `${Math.round(curMaster)}%`;
+      sfxSlider.oninput = () => {
+        const next = root.SoundManager?.setMasterSfxVolume?.(sfxSlider.value) ?? Number(sfxSlider.value);
+        if (sfxValEl) sfxValEl.textContent = `${Math.round(next)}%`;
+      };
+    }
+    if ($('swap-views-btn')) $('swap-views-btn').onclick = () => toggleViewsSwapped();
+    if ($('rematch-btn')) {
+      $('rematch-btn').onclick = () => {
+        root.EndMatchAnimation?.reset?.();
+        resizeThree();
+        root.InGameBack?.restartMatch?.();
+      };
+    }
+    if ($('match-back-to-lobby-btn')) {
+      $('match-back-to-lobby-btn').onclick = onBackToLobby;
+    }
+    root.SoundManager?.preloadAll?.();
+    applyViewsSwappedUI();
     root.InGameDev?.init?.();
     initThree();
     if (!animId && renderer) animate();
@@ -444,6 +611,15 @@
     root.HitSparkEffect?.reset?.();
     root.StartSetAnimation?.reset?.();
     root.EndSetAnimation?.reset?.();
+    root.EndMatchAnimation?.reset?.();
+    root.SoundManager?.stopAll?.();
+    setPauseMenuOpen(false);
+    lastPhase = '';
+    prevPlayerStates.PLAYER_1 = 'IDLE';
+    prevPlayerStates.PLAYER_2 = 'IDLE';
+    if ($('ingame-view')) $('ingame-view').classList?.remove?.('is-match-end');
+    if ($('match-winner-banner')) $('match-winner-banner').hidden = true;
+    if ($('match-end-actions')) $('match-end-actions').hidden = true;
     currentArenaShiftX = 0;
     cameraShakeOffsets.PLAYER_1 = { x: 0, y: 0, z: 0 };
     cameraShakeOffsets.PLAYER_2 = { x: 0, y: 0, z: 0 };
@@ -709,6 +885,18 @@
         mesh.userData?.updateLimbs?.(wx, wy, wz);
       }
 
+      // 0) 검 정렬 키(button === 2) 입력 시 reset 효과음 랜덤 재생 & ATTACK 진입 시 swing 효과음 랜덤 재생
+      const alignTs = Number(data.lastAlignTimestamp) || 0;
+      if (alignTs > 0 && lastAlignTimestamps[playerId] !== alignTs) {
+        lastAlignTimestamps[playerId] = alignTs;
+        root.SoundManager?.playRandom?.('reset');
+      }
+      const curState = data.state || 'IDLE';
+      if (curState === 'ATTACK' && prevPlayerStates[playerId] !== 'ATTACK') {
+        root.SoundManager?.playRandom?.('swing');
+      }
+      prevPlayerStates[playerId] = curState;
+
       // 3) 피격(HIT) 시 고무줄을 당겼다 놓듯 피격 방향으로 빠르게 튕긴 뒤 정점에서 잠깐 멈췄다가 빠르게 원위치로 복귀
       //    + 몸통은 피격 방향으로 살짝 기울어지고 머리는 중심에서 피격 방향으로 살짝 회전
       const headGroup = mesh.userData?.headGroup;
@@ -722,6 +910,7 @@
           lastHitTimestamps[playerId] = hitTs;
           const fallbackPt = data.headCollider?.center || { x: 0, y: 1.4, z: 0 };
           root.HitSparkEffect?.spawn?.(data.hitImpact.worldPoint || fallbackPt, data.hitImpact.worldDir);
+          root.SoundManager?.playRandom?.('hit');
         }
         const totalDur = Math.max(0.05, Number(data.hitImpact.totalDuration) || 1.0);
         const remaining = Math.max(0, Number(data.stateDuration) || 0);
@@ -862,11 +1051,57 @@
     });
     const isStartSetActive = Boolean(root.StartSetAnimation?.isActive?.());
     root.StartSetAnimation?.updateReadyFightCue?.(setInfo);
-    if ((wasEndSetActive && !isEndSetActive) || (wasStartSetActive && !isStartSetActive)) {
-      if (!isStartSetActive && !isEndSetActive) {
-        // 애니메이션 종료 직후 플레이어 및 카메라 위치 즉시 복구
+
+    const wasMatchEndActive = Boolean(root.EndMatchAnimation?.isActive?.());
+    root.EndMatchAnimation?.syncSetState?.(setInfo, {
+      playerGroups,
+      meshes,
+      cameraP1,
+      armOpacity: currentArmOpacity,
+    });
+    const isMatchEndActive = Boolean(root.EndMatchAnimation?.isActive?.());
+
+    if ((wasEndSetActive && !isEndSetActive) || (wasStartSetActive && !isStartSetActive) || (wasMatchEndActive && !isMatchEndActive)) {
+      if (!isStartSetActive && !isEndSetActive && !isMatchEndActive) {
+        // 애니메이션 종료 직후 분할 화면 비율 및 카메라/플레이어 위치 즉시 복구
+        resizeThree();
         applyPlayerDistanceLayout(currentPlayerDistance);
       }
+    }
+
+    // 0-1) 중앙 상단 5판 3선승제 승점 불빛 & 매치 종료 통합 화면 UI 갱신
+    const p1Score = Number(setInfo.scores?.PLAYER_1) || 0;
+    const p2Score = Number(setInfo.scores?.PLAYER_2) || 0;
+    const scoreDots = document.querySelectorAll?.('.score-dot') || [];
+    for (const dot of scoreDots) {
+      const pId = dot.dataset?.player;
+      const idx = Number(dot.dataset?.index) || 0;
+      const score = pId === 'PLAYER_1' ? p1Score : p2Score;
+      dot.classList?.toggle?.('is-lit', idx > 0 && idx <= score);
+    }
+    if ($('score-round-label')) {
+      $('score-round-label').textContent = `R${Number(setInfo.setNumber) || 1}`;
+    }
+
+    const ingameView = $('ingame-view');
+    ingameView?.classList?.toggle?.('is-match-end', isMatchEndActive);
+    const winnerBanner = $('match-winner-banner');
+    const endActions = $('match-end-actions');
+    if (winnerBanner) {
+      winnerBanner.hidden = !isMatchEndActive;
+      if (isMatchEndActive) {
+        const mw = setInfo.matchWinner;
+        winnerBanner.classList?.toggle?.('is-p2', mw === 'PLAYER_2');
+        if ($('match-winner-name')) {
+          $('match-winner-name').textContent = mw === 'PLAYER_2' ? 'PLAYER 2' : 'PLAYER 1';
+        }
+        if ($('match-winner-score')) {
+          $('match-winner-score').textContent = `${p1Score} : ${p2Score}`;
+        }
+      }
+    }
+    if (endActions) {
+      endActions.hidden = !isMatchEndActive;
     }
 
     // 1) 세트 밀어내기 위치 부드럽게 보간 (때리면 앞으로 전진, 맞으면 뒤로 후퇴, 리셋 시 중앙으로 복귀)
@@ -891,15 +1126,26 @@
     // 2-1) 데미지 2배 카운트다운 및 바닥/화면 오오라 이펙트 갱신
     root.DoubleDamageEffect?.update?.(setInfo);
 
-    // 2-2) 방어 성공 / 패리 시 검 충돌 지점 불똥 파티클 이펙트 발생
+    // 2-2) 방어 성공 / 패리 시 검 충돌 지점 불똥 파티클 및 hit 효과음 발생
     const clash = setInfo.lastClashEffect;
     if (clash && clash.timestamp && clash.timestamp !== lastClashTimestamp) {
       lastClashTimestamp = clash.timestamp;
       root.HitSparkEffect?.spawn?.(clash.worldPoint, clash.worldDir);
+      root.SoundManager?.playRandom?.('hit');
     }
 
-    // 3) 세트 시작 준비(영점 정렬) 안내 오버레이 표시
+    // 2-3) 게임 중 hum 루프 출력 및 라운드 패배(RESULT) 시 lose 효과음 출력
+    const shouldPlayHum = Boolean(setInfo.phase === 'PLAYING' && !setInfo.winner && !pauseOpen);
+    root.SoundManager?.setHumPlaying?.(shouldPlayHum);
+    if (setInfo.phase === 'RESULT' && lastPhase !== 'RESULT') {
+      root.SoundManager?.playRandom?.('lose');
+    }
+    lastPhase = setInfo.phase || '';
+
+    // 3) 세트 시작 준비(영점 정렬) 안내 오버레이 표시 + 중앙 화면 전환 버튼 상시 노출 여부 갱신
     const isReadyPhase = setInfo.phase === 'READY';
+    const swapZone = $('swap-views-zone');
+    swapZone?.classList?.toggle?.('is-ready-visible', isReadyPhase);
     const p1ReadyOverlay = $('p1-ready-overlay');
     const p2ReadyOverlay = $('p2-ready-overlay');
     if (p1ReadyOverlay) p1ReadyOverlay.hidden = !isReadyPhase;
@@ -991,6 +1237,10 @@
     getDefenseSwordOffset: () => currentDefenseSwordOffset,
     setStunCircleRadius,
     getStunCircleRadius: () => currentStunCircleRadius,
+    toggleViewsSwapped,
+    isViewsSwapped: () => viewsSwapped,
+    setPauseMenuOpen,
+    renderPausePlayerStatus,
     renderPackets,
     renderFrontalSwordHud: () => root.InGameDev?.renderFrontalSwordHud?.(receivedPlayerInfo),
     toggleFrontalSwordHud: (forceOpen) => root.InGameDev?.toggleFrontalSwordHud?.(forceOpen),

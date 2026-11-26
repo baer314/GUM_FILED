@@ -4,6 +4,7 @@
   const TICK_INTERVAL_MS = 1000 / TICK_RATE;
 
   let active = false;
+  let paused = false;
   let timerId = null;
   let currentPlayers = [];
   let currentRates = new Map();
@@ -396,19 +397,26 @@
   // - 1분 도달 10초 전(50초~60초)부터 화면 중앙 카운트다운(countdownRemaining: 10..1) 표시
   const SET_MAX_STEPS = 4;
   const SET_STEP_DISTANCE = 1.1;
-  const SET_INTRO_DURATION_SEC = 5.0;
+  let setIntroDurationSec = 3.474; // PC/Sound/ready.mp3 길이에 맞춘 기본값 (메타데이터 로드 시 자동 동기화)
   const SET_READY_CUE_SEC = 1.05;
   const SET_FIGHT_BANNER_SEC = 0.85;
-  const SET_RESULT_DISPLAY_SEC = 2.8;
+  let setResultDisplaySec = 4.568; // PC/Sound/lose.mp3 길이(2.568초) + 2초 여유 (로드 시 자동 동기화)
   const SET_DOUBLE_DAMAGE_SEC = 60.0;
   const SET_COUNTDOWN_WINDOW_SEC = 10.0;
+  const MATCH_WINS_REQUIRED = 3; // 5판 3선승제
 
   const setState = {
-    phase: 'INTRO', // 'INTRO' -> 'READY' -> 'READY_CUE' -> 'PLAYING' -> 'RESULT'
+    phase: 'INTRO', // 'INTRO' -> 'READY' -> 'READY_CUE' -> 'PLAYING' -> 'RESULT' -> ('MATCH_END' | next 'INTRO')
     setNumber: 1,
     lastWinner: null,
-    introTimer: SET_INTRO_DURATION_SEC,
-    introDuration: SET_INTRO_DURATION_SEC,
+    winsRequired: MATCH_WINS_REQUIRED,
+    scores: {
+      PLAYER_1: 0,
+      PLAYER_2: 0,
+    },
+    matchWinner: null,
+    introTimer: setIntroDurationSec,
+    introDuration: setIntroDurationSec,
     introAssemblePlayers: ['PLAYER_1', 'PLAYER_2'],
     readyCueTimer: 0,
     fightBannerTimer: 0,
@@ -436,10 +444,13 @@
     } else {
       setState.setNumber = 1;
       setState.lastWinner = null;
+      setState.scores.PLAYER_1 = 0;
+      setState.scores.PLAYER_2 = 0;
+      setState.matchWinner = null;
     }
     setState.phase = 'INTRO';
-    setState.introTimer = SET_INTRO_DURATION_SEC;
-    setState.introDuration = SET_INTRO_DURATION_SEC;
+    setState.introTimer = setIntroDurationSec;
+    setState.introDuration = setIntroDurationSec;
     // 1세트면 두 플레이어 모두 패배 판정으로 조립 애니메이션 진행, 2세트 이상은 직전 라운드 패자만 조립
     if (setState.setNumber === 1 || !setState.lastWinner) {
       setState.introAssemblePlayers = ['PLAYER_1', 'PLAYER_2'];
@@ -475,6 +486,7 @@
     return {
       ...setState,
       ready: { ...setState.ready },
+      scores: { ...setState.scores },
       introAssemblePlayers: [...setState.introAssemblePlayers],
     };
   }
@@ -483,8 +495,44 @@
     return {
       ...setState,
       ready: { ...setState.ready },
+      scores: { ...setState.scores },
       introAssemblePlayers: [...setState.introAssemblePlayers],
     };
+  }
+
+  function setIntroDuration(durationSec) {
+    const num = Number(durationSec);
+    if (Number.isFinite(num) && num >= 0.5 && num <= 30) {
+      const prevDur = setIntroDurationSec;
+      setIntroDurationSec = Number(num.toFixed(3));
+      setState.introDuration = setIntroDurationSec;
+      if (setState.phase === 'INTRO') {
+        const elapsed = Math.max(0, prevDur - setState.introTimer);
+        setState.introTimer = Math.max(0, Number((setIntroDurationSec - elapsed).toFixed(4)));
+      }
+    }
+    return setIntroDurationSec;
+  }
+
+  function setResultDuration(durationSec) {
+    const num = Number(durationSec);
+    if (Number.isFinite(num) && num >= 1.0 && num <= 30) {
+      setResultDisplaySec = Number(num.toFixed(3));
+    }
+    return setResultDisplaySec;
+  }
+
+  function setPaused(flag) {
+    paused = Boolean(flag);
+    return paused;
+  }
+
+  function isPaused() {
+    return paused;
+  }
+
+  function restartMatch() {
+    return resetSetState({ nextSet: false });
   }
 
   function setHitPushbackDistance(value) {
@@ -685,6 +733,7 @@
       angularVelocity: { x: 0, y: 0, z: 0 },       // 플레이어 저장 쿼터니언 기반 검 각속도 (xyz, rad/s)
       acceleration: { x: 0, y: 0, z: 0 },          // 가속도 (xyz)
       button: 0,                                   // 버튼 입력 (0: 없음, 1: 볼륨다운/방어, 2: 볼륨업/검 정렬)
+      lastAlignTimestamp: 0,                       // 검 정렬 키(button === 2)가 눌린 마지막 시각 (reset 효과음 1회 트리거용)
       state: PLAYER_STATE.IDLE,                    // 현재 상태 (기본값: 준비상태)
       stateDuration: 0,                            // 상태 유지시간 (초 단위, 0 이하면 기본상태로 변경)
       armSwingMultiplier,                          // 기울기 값에 따라 팔이 움직이는 배수
@@ -790,6 +839,7 @@
         if (!zeroCalibration[playerId]) {
           zeroCalibration[playerId] = { x: 0, y: 0, z: 0, w: 1 };
         }
+        const prevButton = playerData[playerId].button;
         if (payload.button !== undefined) {
           playerData[playerId].button = payload.button;
         }
@@ -799,6 +849,9 @@
         if (payload.button === 2) {
           zeroCalibration[playerId] = invertQuaternion(payload.rotation_vector);
           calibratedNow = true;
+          if (prevButton !== 2) {
+            playerData[playerId].lastAlignTimestamp = Date.now() + Math.random();
+          }
           if (setState.phase === 'READY' && !setState.ready[playerId]) {
             setState.ready[playerId] = true;
           }
@@ -1742,9 +1795,9 @@
     }
 
     // 4) 방어 상태가 아니거나 방어 각도/선분길이 조건을 만족하지 못한 경우에만 머리 히트박스 피격(HIT) 판정
-    //    때리면 앞으로 전진하고 맞으면 뒤로 밀려남 (기본 데미지 1, 1분 경과 후 데미지 2배, ±maxSteps 도달 시 승패 결정)
+    //    이미 피격(HIT) 상태인 플레이어는 추가 피격 불가(무적), 때리면 전진하고 맞으면 후퇴
     const dmg = Math.max(1, Number(setState.damageMultiplier) || 1);
-    if (s1 === PLAYER_STATE.ATTACK && !p1.attackHasHit && !p2BlockedByAngle && impactOnP2) {
+    if (s1 === PLAYER_STATE.ATTACK && !p1.attackHasHit && !p2BlockedByAngle && s2 !== PLAYER_STATE.HIT && impactOnP2) {
       p1.attackHasHit = true;
       p2.hitImpact = impactOnP2;
       setPlayerState(p2, PLAYER_STATE.HIT, JUDGMENT_DURATION.ATTACK_SUCCESS_HIT);
@@ -1752,11 +1805,12 @@
       if (setState.balance >= setState.maxSteps) {
         setState.phase = 'RESULT';
         setState.winner = 'PLAYER_1';
-        setState.resultTimer = SET_RESULT_DISPLAY_SEC;
+        setState.scores.PLAYER_1 = Math.min(setState.winsRequired, setState.scores.PLAYER_1 + 1);
+        setState.resultTimer = setResultDisplaySec;
       }
     }
 
-    if (s2 === PLAYER_STATE.ATTACK && !p2.attackHasHit && !p1BlockedByAngle && impactOnP1 && !setState.winner) {
+    if (s2 === PLAYER_STATE.ATTACK && !p2.attackHasHit && !p1BlockedByAngle && s1 !== PLAYER_STATE.HIT && impactOnP1 && !setState.winner) {
       p2.attackHasHit = true;
       p1.hitImpact = impactOnP1;
       setPlayerState(p1, PLAYER_STATE.HIT, JUDGMENT_DURATION.ATTACK_SUCCESS_HIT);
@@ -1764,7 +1818,8 @@
       if (setState.balance <= -setState.maxSteps) {
         setState.phase = 'RESULT';
         setState.winner = 'PLAYER_2';
-        setState.resultTimer = SET_RESULT_DISPLAY_SEC;
+        setState.scores.PLAYER_2 = Math.min(setState.winsRequired, setState.scores.PLAYER_2 + 1);
+        setState.resultTimer = setResultDisplaySec;
       }
     }
   }
@@ -1832,10 +1887,23 @@
       setState.fightBannerTimer = Math.max(0, Number((setState.fightBannerTimer - dt).toFixed(4)));
     }
 
-    // 세트 결과(WIN/LOSE) 표시 타이머 차감 -> 만료 시 직전 승자를 기록하고 다음 세트 인트로(INTRO)로 전환
+    // 최종 매치 종료(MATCH_END) 단계: 승자 환호 & 패자 우주 유영 연출 유지 (다시 하기 전까지 전투 정지)
+    if (setState.phase === 'MATCH_END') {
+      for (const player of Object.values(playerData)) {
+        setPlayerState(player, PLAYER_STATE.IDLE, 0, { force: true });
+      }
+      return;
+    }
+
+    // 세트 결과(WIN/LOSE) 표시 타이머 차감 -> 3선승 달성 시 MATCH_END, 아니면 다음 세트 인트로(INTRO)로 전환
     if (setState.resultTimer > 0) {
       setState.resultTimer = Math.max(0, Number((setState.resultTimer - dt).toFixed(4)));
       if (setState.resultTimer <= 0) {
+        if (setState.scores.PLAYER_1 >= setState.winsRequired || setState.scores.PLAYER_2 >= setState.winsRequired) {
+          setState.phase = 'MATCH_END';
+          setState.matchWinner = setState.scores.PLAYER_1 >= setState.winsRequired ? 'PLAYER_1' : 'PLAYER_2';
+          return;
+        }
         setState.lastWinner = setState.winner;
         resetSetState({ nextSet: true });
         return;
@@ -1923,16 +1991,24 @@
   function tick() {
     if (!active) return;
 
+    if (paused) {
+      refreshPlayersFromNetwork();
+      root.InGameFront?.renderPausePlayerStatus?.(currentPlayers, currentRates);
+      root.InGameFront?.renderPackets(currentPlayers, currentRates);
+      return;
+    }
+
     // 1) 센서값 가져오기
     const sensorData = fetchSensorData();
 
-    // 2) 값에 반응해 상태를 갱신하고 (미구현 빈 함수)
+    // 2) 값에 반응해 상태를 갱신하고
     updateState(sensorData);
 
     // 3) 플레이어 정보를 InGameFront로 전달해 그래픽 출력
     renderGraphics(playerData);
 
-    // 패킷 모니터링 오버레이 갱신
+    // 패킷 모니터링 및 일시정지 연결 상태 갱신
+    root.InGameFront?.renderPausePlayerStatus?.(currentPlayers, currentRates);
     root.InGameFront?.renderPackets(currentPlayers, currentRates);
   }
 
@@ -1952,6 +2028,7 @@
 
   function start(players = [], rates = new Map()) {
     active = true;
+    paused = false;
     currentPlayers = players;
     currentRates = rates;
     resetSetState();
@@ -1962,6 +2039,7 @@
 
   function stop() {
     active = false;
+    paused = false;
     stopLoop();
     sensorBuffer.clear();
     resetSetState();
@@ -1991,6 +2069,11 @@
     setState,
     getSetState,
     resetSetState,
+    setIntroDuration,
+    setResultDuration,
+    setPaused,
+    isPaused,
+    restartMatch,
     setHitPushbackDistance,
     getHitPushbackDistance,
     start,

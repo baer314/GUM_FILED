@@ -4,8 +4,8 @@
   // 광선검 & 잔상 커스텀 설정값 (필요 시 이 부분만 조절)
   // =========================================================
   const TRAIL_SAMPLES = 18;        // 잔상 곡선 분할 수 (클수록 부드러움)
-  const TRAIL_LIFETIME_MS = 350;   // 잔상 유지 시간 (ms, 길게 하려면 240~300)
-  const TRAIL_INTENSITY = 1.2;    // 잔상 밝기 강도 (0.4: 은은함 ~ 1.0: 강함)
+  const TRAIL_LIFETIME_MS = 175;   // 잔상 유지 시간 (ms, 길게 하려면 240~300)
+  const TRAIL_INTENSITY = 0.72;    // 잔상 밝기 강도 (0.4: 은은함 ~ 1.0: 강함)
   const INNER_GLOW_OPACITY = 0.46; // 1차 광선검 발광 강도
   const OUTER_GLOW_OPACITY = 0.18; // 2차 외곽 글로우 강도
 
