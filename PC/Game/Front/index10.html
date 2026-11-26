@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>GUM FIELD - 1인칭 2분할 대련 (QR 코드 스캔 지원)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body { width: 100vw; height: 100vh; overflow: hidden; font-family: sans-serif; background-color: #0d1117; }
+
+    canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; display: block; }
+
+    #split-divider {
+      position: absolute; top: 0; left: 50%; width: 4px; height: 100vh;
+      background: rgba(255, 255, 255, 0.3); transform: translateX(-50%);
+      z-index: 5; pointer-events: none; display: none;
+    }
+
+    .hit-flash-overlay {
+      position: absolute; top: 0; width: 50vw; height: 100vh;
+      box-shadow: inset 0 0 50px rgba(239, 68, 68, 0);
+      pointer-events: none; z-index: 6; transition: box-shadow 0.05s ease-out;
+    }
+    #p1-hit-flash { left: 0; }
+    #p2-hit-flash { left: 50vw; }
+    .hit-flash-overlay.active { box-shadow: inset 0 0 80px rgba(239, 68, 68, 0.9); }
+
+    /* 1. 메인 대기실 UI */
+    #lobby-container {
+      position: absolute; top: 5vh; left: 5vw; width: 90vw; height: 90vh;
+      display: flex; flex-direction: column; gap: 20px; z-index: 10;
+    }
+    .title-box {
+      width: 100%; height: 18%; background-color: #e5989b;
+      display: flex; justify-content: center; align-items: center;
+      font-size: 3rem; font-weight: bold; border-radius: 8px; color: #111;
+    }
+    .content-area { width: 100%; height: 82%; display: flex; gap: 20px; }
+    .player-list-box {
+      flex: 2; background-color: #e5989b; border-radius: 8px; padding: 30px;
+      display: flex; flex-direction: column; justify-content: center; gap: 20px;
+    }
+    .player-card {
+      background-color: rgba(255, 255, 255, 0.5); padding: 20px;
+      border-radius: 8px; font-size: 1.8rem; font-weight: bold; color: #222;
+    }
+    .join-sim-btn {
+      align-self: flex-start; padding: 10px 18px; background-color: #457b9d;
+      color: white; border: none; border-radius: 6px; font-size: 14px;
+      font-weight: bold; cursor: pointer; transition: 0.2s;
+    }
+    .join-sim-btn:hover { background-color: #1d3557; }
+
+    .right-side-box { flex: 1; display: flex; flex-direction: column; gap: 20px; }
+    .start-btn {
+      width: 100%; height: 25%; background-color: #e5989b; border: none;
+      border-radius: 8px; font-size: 2.2rem; font-weight: bold; cursor: pointer; color: #111;
+      transition: background-color 0.2s;
+    }
+    .start-btn:hover { background-color: #b5838d; }
+    .qr-box {
+      width: 100%; height: 75%; background-color: #e5989b; border-radius: 8px;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      font-size: 1.8rem; font-weight: bold; color: #222; gap: 10px;
+    }
+    /* 안드로이드 카메라 스캔 인식률을 위한 흰색 여백 포함 QR 컨테이너 */
+    .qr-placeholder {
+      width: 164px; height: 164px; background: #ffffff;
+      display: flex; justify-content: center; align-items: center; font-size: 0.9rem;
+      color: #555; border: 2px solid #222; border-radius: 8px; padding: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    .qr-placeholder img, .qr-placeholder canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+    }
+    .qr-sub-url {
+      font-size: 0.85rem; font-weight: normal; color: #333;
+      max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* 2. 영점 조절 오버레이 UI */
+    #calibration-screen {
+      position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(0, 0, 0, 0.85); display: none;
+      justify-content: center; align-items: center; flex-direction: column;
+      z-index: 20; color: white; gap: 20px; text-align: center;
+    }
+    #calibration-screen h2 { font-size: 2.5rem; color: #ffb703; }
+    #calibration-screen p { font-size: 1.4rem; color: #e0e0e0; line-height: 1.6; }
+    .confirm-btn {
+      margin-top: 15px; padding: 15px 35px; font-size: 1.5rem; font-weight: bold;
+      background-color: #06d6a0; border: none; border-radius: 8px; cursor: pointer; color: #111;
+      transition: 0.2s;
+    }
+    .confirm-btn:hover { background-color: #05b386; transform: scale(1.05); }
+
+    /* 3. 1인칭 인게임 HUD */
+    #game-hud {
+      position: absolute; top: 15px; left: 0; width: 100vw;
+      display: none; justify-content: space-around; z-index: 10;
+      pointer-events: none;
+    }
+    .viewport-label {
+      background: rgba(0, 0, 0, 0.78); color: white; padding: 10px 22px;
+      border-radius: 8px; font-size: 1.2rem; font-weight: bold; border-left: 6px solid #38bdf8;
+      transition: transform 0.1s ease, color 0.15s ease;
+    }
+    .label-p2 { border-left-color: #f72585; }
+    .hp-hit { transform: scale(1.15); color: #ef4444 !important; }
+    .status-stun { color: #c084fc !important; border-left-color: #a855f7 !important; }
+
+    /* 4. 가상 스마트폰 컨트롤러 시뮬레이터 */
+    #phone-panel {
+      position: absolute; bottom: 20px; right: 20px;
+      width: 265px; height: 405px;
+      background: rgba(15, 23, 42, 0.92); border: 2px solid #38bdf8;
+      border-radius: 16px; padding: 14px;
+      display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+      z-index: 25; box-shadow: 0 10px 25px rgba(0,0,0,0.8);
+      perspective: 750px;
+    }
+    .panel-header {
+      width: 100%; display: flex; justify-content: space-between; align-items: center;
+      color: #38bdf8; font-size: 12px; font-weight: bold; gap: 4px;
+    }
+    .switch-player-btn {
+      background: #0284c7; color: white; border: none; border-radius: 4px;
+      padding: 4px 7px; font-size: 11px; font-weight: bold; cursor: pointer;
+    }
+    .switch-player-btn:hover { background: #0369a1; }
+    .calib-btn { background: #0d9488; }
+    .calib-btn:hover { background: #0f766e; }
+
+    .front-dir-hint {
+      font-size: 11px; color: #fbbf24; font-weight: bold;
+      letter-spacing: 0.5px;
+    }
+
+    #phone-container {
+      width: 100%; height: 135px;
+      display: flex; justify-content: center; align-items: center;
+      cursor: grab; position: relative;
+    }
+    #phone-container:active { cursor: grabbing; }
+
+    #virtual-phone {
+      width: 72px; height: 130px;
+      background: #1e293b; border: 3px solid #64748b; border-radius: 16px;
+      box-shadow: 10px 15px 30px rgba(0,0,0,0.85);
+      transform-style: preserve-3d;
+      position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      pointer-events: none;
+    }
+    .phone-side-edge {
+      position: absolute; left: -8px; top: 8px;
+      width: 14px; height: 110px;
+      background: #334155; border: 1px solid #94a3b8; border-radius: 6px;
+      transform: rotateY(-90deg) translateZ(0px);
+      transform-style: preserve-3d;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    #virtual-phone .notch {
+      position: absolute; top: 6px; width: 22px; height: 4px;
+      background: #475569; border-radius: 2px;
+    }
+    #virtual-phone .screen {
+      width: 60px; height: 108px; background: #0f172a; border-radius: 8px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: #38bdf8; font-size: 10px; font-weight: bold; gap: 4px;
+    }
+    .vol-btn {
+      position: absolute; left: -8px; width: 6px;
+      background: #f59e0b; border-radius: 3px;
+      box-shadow: -2px 0 8px rgba(245, 158, 11, 0.9);
+    }
+    .vol-up { top: 28px; height: 16px; }
+    .vol-down { top: 50px; height: 16px; }
+
+    .btn-row { width: 100%; display: flex; gap: 6px; }
+    .action-sim-btn {
+      flex: 1; padding: 8px 4px; color: white;
+      border: none; border-radius: 6px; font-size: 11px; font-weight: bold;
+      cursor: pointer; transition: 0.1s;
+    }
+    .guard-btn { background: #3b82f6; }
+    .guard-btn.active { background: #ef4444; }
+    .charge-btn { background: #d97706; }
+    .charge-btn.active { background: #f59e0b; color: #111; }
+
+    #sensor-readout {
+      width: 100%; background: #0b1120; border-radius: 8px; padding: 7px;
+      color: #94a3b8; font-family: monospace; font-size: 11px; line-height: 1.4;
+    }
+    #sensor-readout span { color: #38bdf8; font-weight: bold; }
+
+    #test-guide {
+      position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.85); color: #00f5d4; padding: 8px 18px;
+      border-radius: 20px; font-size: 13px; z-index: 30; pointer-events: none;
+      border: 1px solid #00f5d4; white-space: nowrap;
+    }
+  </style>
+
+  <!-- QR 코드 이미지 생성 라이브러리 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+
+  <div id="split-divider"></div>
+  <div id="p1-hit-flash" class="hit-flash-overlay"></div>
+  <div id="p2-hit-flash" class="hit-flash-overlay"></div>
+
+  <!-- 1. 메인 대기실 레이아웃 -->
+  <div id="lobby-container">
+    <header class="title-box">GUM FIELD</header>
+    <div class="content-area">
+      <section class="player-list-box">
+        <h2 style="font-size: 2rem;">참가자 명단</h2>
+        <div class="player-card" id="p1-card">Player 1: 연결 대기 중...</div>
+        <div class="player-card" id="p2-card">Player 2: 연결 대기 중...</div>
+        <button class="join-sim-btn" id="join-sim-btn">플레이어 1·2 가상 접속시키기</button>
+      </section>
+      <aside class="right-side-box">
+        <button class="start-btn" id="start-btn">시작버튼</button>
+        <div class="qr-box">
+          <span>PIN: <span id="pin-code">A1B2C3</span></span>
+          <div class="qr-placeholder" id="qr-display">[ QR 로딩 중 ]</div>
+          <span class="qr-sub-url" id="qr-url-text"></span>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- 2. 영점 조절 오버레이 -->
+  <div id="calibration-screen">
+    <h2>영점 조절 진행 중</h2>
+    <p>스마트폰을 세로로 쥐고 <strong style="color:#fbbf24;">볼륨키가 정면(상대방)</strong>을 향하게 맞춘 뒤<br>확인 버튼을 누르세요</p>
+    <button class="confirm-btn" id="calib-confirm-btn">확인 (볼륨키 정면 영점 세팅 및 대련 시작)</button>
+  </div>
+
+  <!-- 3. 1인칭 인게임 HUD -->
+  <div id="game-hud">
+    <div class="viewport-label" id="p1-hp">◀ [P1 시점] HP: 5 / 5 [IDLE]</div>
+    <div class="viewport-label label-p2" id="p2-hp">[P2 시점] HP: 5 / 5 [IDLE] ▶</div>
+  </div>
+
+  <!-- 4. 가상 스마트폰 컨트롤러 시뮬레이터 -->
+  <div id="phone-panel">
+    <div class="panel-header">
+      <span id="active-p-title">📱 P1 조작 중</span>
+      <div>
+        <button class="switch-player-btn calib-btn" id="calib-now-btn" title="볼륨키 정면 기준 영점 재설정">영점[R]</button>
+        <button class="switch-player-btn" id="switch-player-btn">전환[Tab]</button>
+      </div>
+    </div>
+
+    <div class="front-dir-hint">▲ 정면(상대방) : 볼륨키 방향</div>
+    
+    <div id="phone-container">
+      <div id="virtual-phone">
+        <div class="phone-side-edge"></div>
+        <div class="notch"></div>
+        <div class="vol-btn vol-up"></div>
+        <div class="vol-btn vol-down"></div>
+        <div class="screen">
+          <span id="phone-p-tag" style="color: #38bdf8;">PLAYER 1</span>
+          <span id="phone-state-text" style="color: #22c55e; margin-top: 5px;">IDLE</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="action-sim-btn guard-btn" id="guard-btn">방어 [D 홀드]</button>
+      <button class="action-sim-btn charge-btn" id="charge-btn">강타충전 [S]</button>
+    </div>
+
+    <div id="sensor-readout">
+      Roll: <span id="val-roll">0.0°</span> | Pitch: <span id="val-pitch">0.0°</span><br>
+      현재 상태: <span id="val-status">IDLE</span><br>
+      강타 준비: <span id="val-smash">미충전</span>
+    </div>
+  </div>
+
+  <div id="test-guide">
+    [마우스/방향키]: 상대를 조준해 베기 | [R]: 영점 설정 | [D 홀드]: 방어 | [S]: 강타충전 | [Tab]: 1P/2P 전환
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    // ==========================================
+    // [피격 판정 박스 기준 상수] - Back 팀원 공유용 실측 좌표
+    // ==========================================
+    const HITBOX_CONFIG = {
+      halfWidthX: 0.34,
+      minY: 0.48,
+      maxY: 1.68,
+      strikeDepthZ: 0.05,
+      clashDepthZ: 0.05
+    };
+
+    // --- DOM 요소 참조 ---
+    const lobbyUI = document.getElementById('lobby-container');
+    const calibrationUI = document.getElementById('calibration-screen');
+    const gameHudUI = document.getElementById('game-hud');
+    const splitDivider = document.getElementById('split-divider');
+    const pinDisplay = document.getElementById('pin-code');
+    const qrDisplay = document.getElementById('qr-display');
+    const qrUrlText = document.getElementById('qr-url-text');
+    const p1Card = document.getElementById('p1-card');
+    const p2Card = document.getElementById('p2-card');
+    const p1HpBar = document.getElementById('p1-hp');
+    const p2HpBar = document.getElementById('p2-hp');
+    const startBtn = document.getElementById('start-btn');
+    const joinSimBtn = document.getElementById('join-sim-btn');
+    const calibConfirmBtn = document.getElementById('calib-confirm-btn');
+    const p1HitFlash = document.getElementById('p1-hit-flash');
+    const p2HitFlash = document.getElementById('p2-hit-flash');
+
+    const phonePanel = document.getElementById('phone-panel');
+    const phoneContainer = document.getElementById('phone-container');
+    const virtualPhone = document.getElementById('virtual-phone');
+    const phoneStateText = document.getElementById('phone-state-text');
+    const phonePTag = document.getElementById('phone-p-tag');
+    const activePTitle = document.getElementById('active-p-title');
+    const switchPlayerBtn = document.getElementById('switch-player-btn');
+    const calibNowBtn = document.getElementById('calib-now-btn');
+    const guardBtn = document.getElementById('guard-btn');
+    const chargeBtn = document.getElementById('charge-btn');
+    const valRoll = document.getElementById('val-roll');
+    const valPitch = document.getElementById('val-pitch');
+    const valStatus = document.getElementById('val-status');
+    const valSmash = document.getElementById('val-smash');
+
+    let activePlayer = "PLAYER_1";
+    let isExternalBackendConnected = false;
+
+    // ==========================================
+    // [QR 코드 이미지 렌더링 함수]
+    // ==========================================
+    function renderQRCode(qrDataString) {
+      if (!qrDisplay || !qrDataString) return;
+      const textVal = String(qrDataString);
+      qrDisplay.innerHTML = "";
+      if (qrUrlText) qrUrlText.innerText = textVal;
+
+      if (typeof window.QRCode !== "undefined") {
+        new window.QRCode(qrDisplay, {
+          text: textVal,
+          width: 140,
+          height: 140,
+          colorDark: "#000000",
+          colorLight: "#ffffff",
+          correctLevel: window.QRCode.CorrectLevel.M
+        });
+      } else {
+        qrDisplay.innerText = textVal;
+      }
+    }
+
+    // 초기 진입 시 샘플 QR 렌더링 (서버에서 SHOW_WAITING_ROOM 호출 시 실제 URL로 덮어씀)
+    renderQRCode("http://localhost:8080/controller?pin=A1B2C3");
+
+
+    // ==========================================
+    // 1. Three.js 기본 씬 & 1인칭 카메라 설정
+    // ==========================================
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x6ca357);
+
+    const camera1 = new THREE.PerspectiveCamera(55, (window.innerWidth / 2) / window.innerHeight, 0.05, 1000);
+    camera1.position.set(0, 1.25, 1.35);
+    camera1.lookAt(0, 1.15, -1.35);
+
+    const camera2 = new THREE.PerspectiveCamera(55, (window.innerWidth / 2) / window.innerHeight, 0.05, 1000);
+    camera2.position.set(0, 1.25, -1.35);
+    camera2.lookAt(0, 1.15, 1.35);
+
+    camera1.layers.enable(0);
+    camera1.layers.enable(1);
+    camera2.layers.enable(0);
+    camera2.layers.enable(2);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setScissorTest(true);
+    document.body.appendChild(renderer.domElement);
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambientLight);
+    const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight1.position.set(2, 5, 3);
+    scene.add(dirLight1);
+    const dirLight2 = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight2.position.set(-2, 5, -3);
+    scene.add(dirLight2);
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(20, 20),
+      new THREE.MeshStandardMaterial({ color: 0x5a8f47 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = 0;
+    scene.add(floor);
+
+
+    // ==========================================
+    // 2. 상대방 캐릭터 더미 (피격 넉백 & 기절 별 이펙트)
+    // ==========================================
+    function setRecursiveLayer(object, layerNum) {
+      object.layers.set(layerNum);
+      object.traverse(child => child.layers.set(layerNum));
+    }
+
+    function createOpponentModel(colorHex, facingAngle) {
+      const charGroup = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial({
+        color: colorHex,
+        roughness: 0.3,
+        emissive: 0x000000
+      });
+
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 32, 32), mat);
+      head.position.y = 0.55;
+      charGroup.add(head);
+
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 0.65, 32), mat);
+      body.position.y = 0.05;
+      charGroup.add(body);
+
+      const visor = new THREE.Mesh(
+        new THREE.BoxGeometry(0.32, 0.08, 0.1),
+        new THREE.MeshBasicMaterial({ color: 0x111111 })
+      );
+      visor.position.set(0, 0.58, 0.26);
+      charGroup.add(visor);
+
+      const alertGroup = new THREE.Group();
+      alertGroup.position.set(0, 1.05, 0);
+      const exBar = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.03, 0.04, 0.18, 16),
+        new THREE.MeshBasicMaterial({ color: 0xff0000 })
+      );
+      const exDot = new THREE.Mesh(
+        new THREE.SphereGeometry(0.04, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0xff0000 })
+      );
+      exDot.position.y = -0.15;
+      alertGroup.add(exBar);
+      alertGroup.add(exDot);
+      alertGroup.visible = false;
+      charGroup.add(alertGroup);
+
+      const stunHalo = new THREE.Group();
+      stunHalo.position.set(0, 0.98, 0);
+      const starMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+      for (let i = 0; i < 3; i++) {
+        const angle = (i * Math.PI * 2) / 3;
+        const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.055, 0), starMat);
+        star.position.set(Math.cos(angle) * 0.28, 0, Math.sin(angle) * 0.28);
+        stunHalo.add(star);
+      }
+      stunHalo.visible = false;
+      charGroup.add(stunHalo);
+
+      charGroup.rotation.y = facingAngle;
+      scene.add(charGroup);
+
+      return {
+        group: charGroup,
+        mat: mat,
+        alert: alertGroup,
+        stunHalo: stunHalo,
+        baseZ: 0,
+        recoilZ: 0,
+        recoilAngle: 0,
+        flashTimer: 0
+      };
+    }
+
+    const p1Body = createOpponentModel(0x3a86ff, Math.PI);
+    p1Body.baseZ = 1.35;
+    p1Body.group.position.set(0, 0.8, 1.35);
+    setRecursiveLayer(p1Body.group, 2);
+
+    const p2Body = createOpponentModel(0xd9383a, 0);
+    p2Body.baseZ = -1.35;
+    p2Body.group.position.set(0, 0.8, -1.35);
+    setRecursiveLayer(p2Body.group, 1);
+
+
+    // ==========================================
+    // 3. 3D 검 메쉬 & CHARGE / SMASH / DEFENSE VFX
+    // ==========================================
+    function createRiggedSword(handleColor) {
+      const pivot = new THREE.Group();
+
+      const handleMarker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.05, 16, 16),
+        new THREE.MeshStandardMaterial({ color: handleColor, roughness: 0.2 })
+      );
+      pivot.add(handleMarker);
+
+      const bladeLength = 0.85;
+      const bladeMat = new THREE.MeshStandardMaterial({
+        color: 0xeeeeee,
+        metalness: 0.85,
+        roughness: 0.2,
+        emissive: 0x000000
+      });
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, bladeLength, 0.02), bladeMat);
+      blade.position.y = bladeLength / 2;
+      pivot.add(blade);
+
+      const tipMarker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.045, 16, 16),
+        new THREE.MeshStandardMaterial({ color: 0xff3333 })
+      );
+      tipMarker.position.y = bladeLength;
+      pivot.add(tipMarker);
+
+      const chargeGroup = new THREE.Group();
+      chargeGroup.position.y = bladeLength * 0.5;
+      const chargeSphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.13, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0xff9f1c, transparent: true, opacity: 0.65 })
+      );
+      const chargeRing = new THREE.Mesh(
+        new THREE.TorusGeometry(0.2, 0.02, 8, 24),
+        new THREE.MeshBasicMaterial({ color: 0xffbf69 })
+      );
+      chargeRing.rotation.x = Math.PI / 2;
+      chargeGroup.add(chargeSphere);
+      chargeGroup.add(chargeRing);
+      chargeGroup.visible = false;
+      pivot.add(chargeGroup);
+
+      const guardSpark = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.22, 0),
+        new THREE.MeshBasicMaterial({ color: 0xffea00 })
+      );
+      guardSpark.visible = false;
+      scene.add(guardSpark);
+
+      const hitVFXGroup = new THREE.Group();
+      const hitSlashPlane1 = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.65, 0.12),
+        new THREE.MeshBasicMaterial({ color: 0xff3838, side: THREE.DoubleSide })
+      );
+      const hitSlashPlane2 = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.65, 0.12),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
+      );
+      hitSlashPlane1.rotation.z = Math.PI / 4;
+      hitSlashPlane2.rotation.z = -Math.PI / 4;
+      hitVFXGroup.add(hitSlashPlane1);
+      hitVFXGroup.add(hitSlashPlane2);
+      hitVFXGroup.visible = false;
+      scene.add(hitVFXGroup);
+
+      const trailMat = new THREE.MeshBasicMaterial({
+        color: 0x4cc9f0,
+        transparent: true,
+        opacity: 0.6,
+        side: THREE.DoubleSide
+      });
+      const trailGeo = new THREE.BufferGeometry();
+      const trailMesh = new THREE.Mesh(trailGeo, trailMat);
+      scene.add(trailMesh);
+
+      scene.add(pivot);
+      return {
+        pivot,
+        bladeMat,
+        bladeLength,
+        chargeGroup,
+        guardSpark,
+        hitVFXGroup,
+        hitVFXTimer: 0,
+        trailMesh,
+        trailMat,
+        trailGeo,
+        trailHistory: []
+      };
+    }
+
+    const swordP1 = createRiggedSword(0x38bdf8);
+    const swordP2 = createRiggedSword(0xf72585);
+
+
+    // ==========================================
+    // 4. 상태 저장소 및 3D 목표값 관리
+    // ==========================================
+    const rotY180 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+
+    const playerStates = {
+      "PLAYER_1": {
+        pos: new THREE.Vector3(0.18, 0.95, 0.95),
+        targetPos: new THREE.Vector3(0.18, 0.95, 0.95),
+        quat: new THREE.Quaternion(),
+        targetQuat: new THREE.Quaternion(),
+        hp: 5,
+        status: "IDLE",
+        hitCooldown: 0,
+        stunTimer: 0,
+        clashCooldown: 0
+      },
+      "PLAYER_2": {
+        pos: new THREE.Vector3(-0.18, 0.95, -0.95),
+        targetPos: new THREE.Vector3(-0.18, 0.95, -0.95),
+        quat: rotY180.clone(),
+        targetQuat: rotY180.clone(),
+        hp: 5,
+        status: "IDLE",
+        hitCooldown: 0,
+        stunTimer: 0,
+        clashCooldown: 0
+      }
+    };
+
+
+    // ==========================================
+    // 5. 피격 리액션 트리거 (일반 피격 & 강타 관통)
+    // ==========================================
+    function triggerHitReaction(victimId, hitWorldPos, isSmashHit = false) {
+      const victim = (victimId === "PLAYER_1") ? p1Body : p2Body;
+      const victimState = playerStates[victimId];
+      const swordVFX = (victimId === "PLAYER_1") ? swordP2 : swordP1;
+      const flashEl = (victimId === "PLAYER_1") ? p1HitFlash : p2HitFlash;
+      const hpEl = (victimId === "PLAYER_1") ? p1HpBar : p2HpBar;
+
+      hpEl.classList.add('hp-hit');
+      flashEl.classList.add('active');
+      setTimeout(() => {
+        hpEl.classList.remove('hp-hit');
+        flashEl.classList.remove('active');
+      }, isSmashHit ? 350 : 250);
+
+      victim.recoilZ = isSmashHit ? 0.65 : 0.45;
+      victim.recoilAngle = isSmashHit ? 0.5 : 0.35;
+      victim.flashTimer = isSmashHit ? 0.32 : 0.22;
+
+      const hitPos = hitWorldPos || new THREE.Vector3(
+        victim.group.position.x,
+        1.0,
+        victim.group.position.z + (victimId === "PLAYER_1" ? -0.3 : 0.3)
+      );
+      swordVFX.hitVFXGroup.position.copy(hitPos);
+      const scaleVal = isSmashHit ? 1.6 : 1.0;
+      swordVFX.hitVFXGroup.scale.set(scaleVal, scaleVal, scaleVal);
+      swordVFX.hitVFXGroup.visible = true;
+      swordVFX.hitVFXTimer = 0.28;
+
+      victimState.hitCooldown = 0.8;
+    }
+
+
+    // ==========================================
+    // 6. 입·출력 규격서 기반 연동 함수 (Back 호출 대상)
+    // ==========================================
+    function handleUICommand(command, data = {}) {
+      switch (command) {
+        case "SHOW_WAITING_ROOM":
+          lobbyUI.style.display = "flex";
+          calibrationUI.style.display = "none";
+          gameHudUI.style.display = "none";
+          splitDivider.style.display = "none";
+          if (data.room_pin) pinDisplay.innerText = data.room_pin;
+          if (data.qr_data) renderQRCode(data.qr_data);
+          break;
+
+        case "UPDATE_PLAYER_READY":
+          if (data.connected_id === "PLAYER_1") p1Card.innerText = "Player 1: 준비 완료 (READY)";
+          if (data.connected_id === "PLAYER_2") p2Card.innerText = "Player 2: 준비 완료 (READY)";
+          break;
+
+        case "SHOW_CALIBRATION_UI":
+          lobbyUI.style.display = "none";
+          calibrationUI.style.display = "flex";
+          gameHudUI.style.display = "none";
+          splitDivider.style.display = "none";
+          break;
+
+        case "START_MAIN_GAME":
+          lobbyUI.style.display = "none";
+          calibrationUI.style.display = "none";
+          gameHudUI.style.display = "flex";
+          splitDivider.style.display = "block";
+          break;
+      }
+    }
+
+    function updateRender(target_id, status, hp, sword_transform, _isInternalSim = false) {
+      if (!_isInternalSim && !isExternalBackendConnected) {
+        isExternalBackendConnected = true;
+        if (phonePanel) phonePanel.style.display = "none";
+      }
+
+      const p = playerStates[target_id];
+      if (!p) return;
+
+      if (typeof hp === 'number' && hp < p.hp) {
+        triggerHitReaction(target_id);
+      }
+
+      p.status = status;
+      if (typeof hp === 'number') p.hp = hp;
+
+      const hpEl = (target_id === "PLAYER_1") ? p1HpBar : p2HpBar;
+      if (hpEl) {
+        hpEl.classList.toggle('status-stun', status === "STUN");
+        if (target_id === "PLAYER_1") {
+          hpEl.innerText = `◀ [P1 시점] HP: ${p.hp} / 5 [${status}]`;
+        } else {
+          hpEl.innerText = `[P2 시점] HP: ${p.hp} / 5 [${status}] ▶`;
+        }
+      }
+
+      if (sword_transform && sword_transform.position) {
+        p.targetPos.set(sword_transform.position.x, sword_transform.position.y, sword_transform.position.z);
+      }
+      if (sword_transform && sword_transform.quaternion) {
+        p.targetQuat.set(
+          sword_transform.quaternion.x,
+          sword_transform.quaternion.y,
+          sword_transform.quaternion.z,
+          sword_transform.quaternion.w
+        );
+      }
+    }
+
+    window.front = {
+      handleUICommand,
+      updateRender,
+      onStartButtonClick: null
+    };
+    window.handleUICommand = handleUICommand;
+    window.updateRender = updateRender;
+
+
+    // ==========================================
+    // 7. 가상 스마트폰 3D 센서 시뮬레이터 (옆으로 90도 회전 -> 볼륨키가 앞을 향함)
+    // ==========================================
+    const phoneSensors = {
+      "PLAYER_1": { roll: 0.0, pitch: -0.15, calibRoll: 0.0, calibPitch: 0.0, prevRoll: 0.0, prevPitch: 0.0, isDefending: false, isCharging: false, smashReady: false },
+      "PLAYER_2": { roll: 0.0, pitch: -0.15, calibRoll: 0.0, calibPitch: 0.0, prevRoll: 0.0, prevPitch: 0.0, isDefending: false, isCharging: false, smashReady: false }
+    };
+
+    let isMouseDown = false;
+    let prevMouseX = 0;
+    let prevMouseY = 0;
+    const pressedKeys = {};
+
+    function calibrateZeroPoint(targetPlayerId = null) {
+      const targets = targetPlayerId ? [targetPlayerId] : ["PLAYER_1", "PLAYER_2"];
+      targets.forEach(pid => {
+        const s = phoneSensors[pid];
+        s.calibRoll = s.roll;
+        s.calibPitch = s.pitch + 0.15;
+        s.prevRoll = 0.0;
+        s.prevPitch = -0.15;
+      });
+    }
+
+    function switchPlayer() {
+      activePlayer = (activePlayer === "PLAYER_1") ? "PLAYER_2" : "PLAYER_1";
+      const isP1 = (activePlayer === "PLAYER_1");
+      activePTitle.innerText = isP1 ? "📱 P1 조작 중" : "📱 P2 조작 중";
+      activePTitle.style.color = isP1 ? "#38bdf8" : "#f72585";
+      phonePTag.innerText = isP1 ? "PLAYER 1" : "PLAYER 2";
+      phonePTag.style.color = isP1 ? "#38bdf8" : "#f72585";
+      updateSimButtonsUI();
+    }
+
+    switchPlayerBtn.addEventListener('click', switchPlayer);
+    calibNowBtn.addEventListener('click', () => calibrateZeroPoint(activePlayer));
+
+    phoneContainer.addEventListener('mousedown', (e) => {
+      isMouseDown = true;
+      prevMouseX = e.clientX;
+      prevMouseY = e.clientY;
+    });
+
+    window.addEventListener('mouseup', () => { isMouseDown = false; });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isMouseDown) return;
+      const deltaX = e.clientX - prevMouseX;
+      const deltaY = e.clientY - prevMouseY;
+      const sensor = phoneSensors[activePlayer];
+
+      sensor.roll -= deltaX * 0.018;
+      sensor.pitch -= deltaY * 0.018;
+
+      prevMouseX = e.clientX;
+      prevMouseY = e.clientY;
+    });
+
+    function updateSimButtonsUI() {
+      const sensor = phoneSensors[activePlayer];
+      guardBtn.classList.toggle('active', sensor.isDefending);
+      guardBtn.innerText = sensor.isDefending ? "방어 중 (DEFENSE)" : "방어 [D 홀드]";
+
+      chargeBtn.classList.toggle('active', sensor.isCharging || sensor.smashReady);
+      chargeBtn.innerText = sensor.smashReady ? "강타 준비완료!" : "강타충전 [S]";
+
+      valSmash.innerText = sensor.smashReady ? "준비됨 [SMASH READY]" : "미충전";
+      valSmash.style.color = sensor.smashReady ? "#f59e0b" : "#38bdf8";
+    }
+
+    function setGuardState(enable) {
+      const sensor = phoneSensors[activePlayer];
+      sensor.isDefending = enable;
+      if (enable) {
+        sensor.isCharging = false;
+        sensor.smashReady = false;
+      }
+      updateSimButtonsUI();
+    }
+
+    function triggerChargeAction(isHolding) {
+      const sensor = phoneSensors[activePlayer];
+      const pState = playerStates[activePlayer];
+      if (pState.stunTimer > 0) return;
+
+      if (isHolding) {
+        sensor.isDefending = false;
+        sensor.isCharging = true;
+        sensor.smashReady = true;
+      } else {
+        sensor.isCharging = false;
+      }
+      updateSimButtonsUI();
+    }
+
+    guardBtn.addEventListener('mousedown', () => setGuardState(true));
+    window.addEventListener('mouseup', () => {
+      if (!pressedKeys['d'] && !pressedKeys['D']) setGuardState(false);
+    });
+
+    chargeBtn.addEventListener('mousedown', () => triggerChargeAction(true));
+    chargeBtn.addEventListener('mouseup', () => triggerChargeAction(false));
+
+    function process3DController(delta) {
+      if (isExternalBackendConnected) return;
+
+      ["PLAYER_1", "PLAYER_2"].forEach(pid => {
+        if (playerStates[pid].stunTimer > 0) {
+          playerStates[pid].stunTimer = Math.max(0, playerStates[pid].stunTimer - delta);
+        }
+        if (playerStates[pid].clashCooldown > 0) {
+          playerStates[pid].clashCooldown = Math.max(0, playerStates[pid].clashCooldown - delta);
+        }
+      });
+
+      const sensor = phoneSensors[activePlayer];
+      const pState = playerStates[activePlayer];
+      const isStunned = (pState.stunTimer > 0);
+      const turnSpeed = 0.045;
+
+      if (pressedKeys['ArrowLeft']) sensor.roll += turnSpeed;
+      if (pressedKeys['ArrowRight']) sensor.roll -= turnSpeed;
+      if (pressedKeys['ArrowUp']) sensor.pitch += turnSpeed;
+      if (pressedKeys['ArrowDown']) sensor.pitch -= turnSpeed;
+
+      const effRoll = Math.max(-2.5, Math.min(2.5, sensor.roll - sensor.calibRoll));
+      const effPitch = Math.max(-1.5, Math.min(1.2, sensor.pitch - sensor.calibPitch));
+
+      const angularSpeed = Math.sqrt(
+        Math.pow(effRoll - sensor.prevRoll, 2) + 
+        Math.pow(effPitch - sensor.prevPitch, 2)
+      );
+      sensor.prevRoll = effRoll;
+      sensor.prevPitch = effPitch;
+
+      let status = "IDLE";
+      if (isStunned) {
+        sensor.isCharging = false;
+        sensor.smashReady = false;
+        status = sensor.isDefending ? "DEFENSE" : "STUN";
+      } else if (sensor.isDefending) {
+        status = "DEFENSE";
+      } else if (angularSpeed > 0.012) {
+        if (sensor.smashReady) {
+          status = "SMASH";
+          sensor.isCharging = false;
+        } else {
+          status = "ATTACK";
+        }
+      } else if (sensor.isCharging) {
+        status = "CHARGE";
+      }
+
+      if (pState.status === "SMASH" && status === "IDLE") {
+        sensor.smashReady = false;
+      }
+      updateSimButtonsUI();
+
+      const degRoll = (effRoll * (180 / Math.PI)).toFixed(1);
+      const degPitch = (effPitch * (180 / Math.PI)).toFixed(1);
+
+      virtualPhone.style.transform = `rotateX(${-degPitch}deg) rotateZ(${-degRoll}deg) rotateY(-84deg)`;
+      valRoll.innerText = `${degRoll}°`;
+      valPitch.innerText = `${degPitch}°`;
+      valStatus.innerText = status;
+      phoneStateText.innerText = status;
+
+      if (status === "STUN") phoneStateText.style.color = "#c084fc";
+      else if (status === "SMASH") phoneStateText.style.color = "#ef4444";
+      else if (status === "ATTACK" || status === "CHARGE") phoneStateText.style.color = "#f59e0b";
+      else if (status === "DEFENSE") phoneStateText.style.color = "#38bdf8";
+      else phoneStateText.style.color = "#22c55e";
+
+      const isAttacking = (status === "ATTACK" || status === "SMASH");
+      const swingForward = isAttacking ? 0.45 : (status === "DEFENSE" ? 0.15 : 0.0);
+      const pitchForward = -Math.sin(effPitch) * 0.35;
+
+      const localZ = 0.95 - (swingForward + pitchForward);
+      const localX = 0.18 - Math.sin(effRoll) * 0.45;
+      const localY = (status === "STUN") ? 0.65 : (0.95 + Math.sin(effPitch) * 0.35);
+
+      const forwardTilt = (status === "STUN") ? -1.15 : (isAttacking ? -0.55 : 0);
+      const guardAngle = (status === "DEFENSE") ? 1.4 : ((status === "STUN") ? 0.45 : 0);
+
+      const localEuler = new THREE.Euler(effPitch + forwardTilt, 0, effRoll + guardAngle, 'YXZ');
+      const localQuat = new THREE.Quaternion().setFromEuler(localEuler);
+
+      let worldPos, worldQuat;
+      if (activePlayer === "PLAYER_1") {
+        worldPos = new THREE.Vector3(localX, localY, localZ);
+        worldQuat = localQuat;
+      } else {
+        worldPos = new THREE.Vector3(-localX, localY, -localZ);
+        worldQuat = rotY180.clone().multiply(localQuat);
+      }
+
+      updateRender(activePlayer, status, pState.hp, {
+        position: { x: worldPos.x, y: worldPos.y, z: worldPos.z },
+        quaternion: { x: worldQuat.x, y: worldQuat.y, z: worldQuat.z, w: worldQuat.w }
+      }, true);
+    }
+
+
+    // ==========================================
+    // 8. 렌더 루프 및 정밀 3D 피격 판정
+    // ==========================================
+    function updateSwordVisual(swordObj, pState, delta, elapsedTime) {
+      pState.pos.lerp(pState.targetPos, 0.28);
+      pState.quat.slerp(pState.targetQuat, 0.28);
+
+      swordObj.pivot.position.copy(pState.pos);
+      swordObj.pivot.quaternion.copy(pState.quat);
+
+      const st = pState.status;
+      const isAttacking = (st === "ATTACK" || st === "SMASH");
+      const isSmash = (st === "SMASH");
+      const isCharge = (st === "CHARGE");
+      const isStun = (st === "STUN");
+
+      swordObj.chargeGroup.visible = isCharge;
+      if (isCharge) {
+        swordObj.chargeGroup.rotation.y += delta * 6.0;
+        const pulse = 1.0 + Math.sin(elapsedTime * 15) * 0.2;
+        swordObj.chargeGroup.scale.set(pulse, pulse, pulse);
+        swordObj.bladeMat.emissive.setHex(0xff8800);
+      } else if (isSmash) {
+        swordObj.bladeMat.emissive.setHex(0xff2222);
+      } else if (isStun) {
+        swordObj.bladeMat.emissive.setHex(0x7e22ce);
+      } else {
+        swordObj.bladeMat.emissive.setHex(0x000000);
+      }
+
+      swordObj.trailMat.color.setHex(isSmash ? 0xff3b00 : 0x4cc9f0);
+
+      const tipOffset = new THREE.Vector3(0, swordObj.bladeLength, 0);
+      tipOffset.applyQuaternion(pState.quat);
+      const currentTipPos = new THREE.Vector3().addVectors(pState.pos, tipOffset);
+
+      if (isAttacking) {
+        swordObj.trailHistory.push({
+          tip: currentTipPos.clone(),
+          handle: pState.pos.clone()
+        });
+        if (swordObj.trailHistory.length > (isSmash ? 11 : 8)) swordObj.trailHistory.shift();
+      } else {
+        if (swordObj.trailHistory.length > 0) swordObj.trailHistory.shift();
+      }
+
+      if (swordObj.trailHistory.length >= 2) {
+        const positions = [];
+        for (let i = 0; i < swordObj.trailHistory.length - 1; i++) {
+          const p1 = swordObj.trailHistory[i];
+          const p2 = swordObj.trailHistory[i + 1];
+
+          positions.push(p1.handle.x, p1.handle.y, p1.handle.z);
+          positions.push(p1.tip.x, p1.tip.y, p1.tip.z);
+          positions.push(p2.tip.x, p2.tip.y, p2.tip.z);
+
+          positions.push(p1.handle.x, p1.handle.y, p1.handle.z);
+          positions.push(p2.tip.x, p2.tip.y, p2.tip.z);
+          positions.push(p2.handle.x, p2.handle.y, p2.handle.z);
+        }
+        swordObj.trailGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        swordObj.trailGeo.computeVertexNormals();
+        swordObj.trailMesh.visible = true;
+      } else {
+        swordObj.trailMesh.visible = false;
+      }
+
+      if (swordObj.hitVFXTimer > 0) {
+        swordObj.hitVFXTimer -= delta;
+        swordObj.hitVFXGroup.scale.multiplyScalar(1.08);
+        if (swordObj.hitVFXTimer <= 0) swordObj.hitVFXGroup.visible = false;
+      }
+
+      return currentTipPos;
+    }
+
+    function updateCharacterVisual(opponent, pState, delta, elapsedTime, isPlayer1) {
+      opponent.recoilZ = THREE.MathUtils.lerp(opponent.recoilZ, 0, 0.12);
+      opponent.recoilAngle = THREE.MathUtils.lerp(opponent.recoilAngle, 0, 0.12);
+
+      const dir = isPlayer1 ? 1 : -1;
+      opponent.group.position.z = opponent.baseZ + (opponent.recoilZ * dir);
+      opponent.group.rotation.x = opponent.recoilAngle * dir;
+
+      opponent.alert.visible = (pState.status === "DEFENSE");
+
+      const isStunned = (pState.status === "STUN");
+      opponent.stunHalo.visible = isStunned;
+      if (isStunned) {
+        opponent.stunHalo.rotation.y += delta * 5.0;
+        opponent.group.rotation.z = Math.sin(elapsedTime * 18) * 0.12;
+      } else {
+        opponent.group.rotation.z = THREE.MathUtils.lerp(opponent.group.rotation.z, 0, 0.2);
+      }
+
+      if (opponent.flashTimer > 0) {
+        opponent.flashTimer -= delta;
+        opponent.mat.emissive.setHex(0xff2222);
+      } else if (isStunned) {
+        opponent.mat.emissive.setHex(0x6b21a8);
+      } else {
+        opponent.mat.emissive.setHex(0x000000);
+      }
+    }
+
+    function isInsideOpponentHitbox(tipPos, isAttackerP1) {
+      const withinX = Math.abs(tipPos.x) <= HITBOX_CONFIG.halfWidthX;
+      const withinY = tipPos.y >= HITBOX_CONFIG.minY && tipPos.y <= HITBOX_CONFIG.maxY;
+      const reachedZ = isAttackerP1
+        ? (tipPos.z <= -HITBOX_CONFIG.strikeDepthZ)
+        : (tipPos.z >= HITBOX_CONFIG.strikeDepthZ);
+
+      return withinX && withinY && reachedZ;
+    }
+
+    function checkLocalSimCombat(tip1, tip2, delta) {
+      if (isExternalBackendConnected) return;
+
+      const p1 = playerStates["PLAYER_1"];
+      const p2 = playerStates["PLAYER_2"];
+
+      if (p1.hitCooldown > 0) p1.hitCooldown -= delta;
+      if (p2.hitCooldown > 0) p2.hitCooldown -= delta;
+
+      const p1NormalAtk = (p1.status === "ATTACK");
+      const p2NormalAtk = (p2.status === "ATTACK");
+      const p1Smash = (p1.status === "SMASH");
+      const p2Smash = (p2.status === "SMASH");
+      const p1Def = (p1.status === "DEFENSE");
+      const p2Def = (p2.status === "DEFENSE");
+
+      const p1Clashed = p1NormalAtk && p2Def && tip1 && (tip1.z <= HITBOX_CONFIG.clashDepthZ) && (Math.abs(tip1.x) <= HITBOX_CONFIG.halfWidthX + 0.15);
+      const p2Clashed = p2NormalAtk && p1Def && tip2 && (tip2.z >= -HITBOX_CONFIG.clashDepthZ) && (Math.abs(tip2.x) <= HITBOX_CONFIG.halfWidthX + 0.15);
+      const isNormalClash = p1Clashed || p2Clashed;
+
+      swordP1.guardSpark.visible = isNormalClash;
+      swordP2.guardSpark.visible = isNormalClash;
+
+      if (isNormalClash) {
+        const midPoint = new THREE.Vector3().addVectors(tip1, tip2).multiplyScalar(0.5);
+        swordP1.guardSpark.position.copy(midPoint);
+        swordP2.guardSpark.position.copy(midPoint);
+
+        if (p1Clashed && p1.clashCooldown <= 0) {
+          p1.stunTimer = 1.5;
+          p1.clashCooldown = 0.6;
+          updateRender("PLAYER_1", "STUN", p1.hp, null, true);
+        }
+        if (p2Clashed && p2.clashCooldown <= 0) {
+          p2.stunTimer = 1.5;
+          p2.clashCooldown = 0.6;
+          updateRender("PLAYER_2", "STUN", p2.hp, null, true);
+        }
+        return;
+      }
+
+      const p1CanHit = (p1NormalAtk && !p2Def) || p1Smash;
+      if (p1CanHit && p2.hitCooldown <= 0 && tip1 && isInsideOpponentHitbox(tip1, true)) {
+        const nextHp = Math.max(0, p2.hp - 1);
+        const hitPos = new THREE.Vector3(tip1.x, THREE.MathUtils.clamp(tip1.y, 0.7, 1.4), p2Body.group.position.z + 0.32);
+        phoneSensors["PLAYER_1"].smashReady = false;
+        updateRender("PLAYER_2", p2.status, nextHp, null, true);
+        triggerHitReaction("PLAYER_2", hitPos, p1Smash);
+      }
+
+      const p2CanHit = (p2NormalAtk && !p1Def) || p2Smash;
+      if (p2CanHit && p1.hitCooldown <= 0 && tip2 && isInsideOpponentHitbox(tip2, false)) {
+        const nextHp = Math.max(0, p1.hp - 1);
+        const hitPos = new THREE.Vector3(tip2.x, THREE.MathUtils.clamp(tip2.y, 0.7, 1.4), p1Body.group.position.z - 0.32);
+        phoneSensors["PLAYER_2"].smashReady = false;
+        updateRender("PLAYER_1", p1.status, nextHp, null, true);
+        triggerHitReaction("PLAYER_1", hitPos, p2Smash);
+      }
+    }
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      const elapsedTime = clock.elapsedTime;
+
+      process3DController(delta);
+
+      const p1 = playerStates["PLAYER_1"];
+      const p2 = playerStates["PLAYER_2"];
+
+      const tip1 = updateSwordVisual(swordP1, p1, delta, elapsedTime);
+      const tip2 = updateSwordVisual(swordP2, p2, delta, elapsedTime);
+
+      updateCharacterVisual(p1Body, p1, delta, elapsedTime, true);
+      updateCharacterVisual(p2Body, p2, delta, elapsedTime, false);
+
+      checkLocalSimCombat(tip1, tip2, delta);
+
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      const halfWidth = Math.floor(width / 2);
+
+      renderer.setViewport(0, 0, halfWidth, height);
+      renderer.setScissor(0, 0, halfWidth, height);
+      camera1.aspect = halfWidth / height;
+      camera1.updateProjectionMatrix();
+      renderer.render(scene, camera1);
+
+      renderer.setViewport(halfWidth, 0, halfWidth, height);
+      renderer.setScissor(halfWidth, 0, halfWidth, height);
+      camera2.aspect = halfWidth / height;
+      camera2.updateProjectionMatrix();
+      renderer.render(scene, camera2);
+    }
+    animate();
+
+
+    // ==========================================
+    // 9. UI 및 단축키 이벤트
+    // ==========================================
+    joinSimBtn.addEventListener('click', () => {
+      handleUICommand("UPDATE_PLAYER_READY", { connected_id: "PLAYER_1" });
+      handleUICommand("UPDATE_PLAYER_READY", { connected_id: "PLAYER_2" });
+    });
+
+    startBtn.addEventListener('click', () => {
+      if (typeof window.front.onStartButtonClick === 'function') {
+        window.front.onStartButtonClick();
+      } else {
+        handleUICommand("SHOW_CALIBRATION_UI");
+      }
+    });
+
+    calibConfirmBtn.addEventListener('click', () => {
+      calibrateZeroPoint();
+      handleUICommand("START_MAIN_GAME");
+    });
+
+    window.addEventListener('keydown', (e) => {
+      pressedKeys[e.key] = true;
+
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        switchPlayer();
+      }
+
+      if (e.key === 'r' || e.key === 'R') calibrateZeroPoint(activePlayer);
+      if (e.key === 'd' || e.key === 'D') setGuardState(true);
+      if (e.key === 's' || e.key === 'S') triggerChargeAction(true);
+
+      if (e.key === '1') {
+        handleUICommand("SHOW_WAITING_ROOM", {
+          room_pin: "A1B2C3",
+          qr_data: "http://localhost:8080/controller?pin=A1B2C3"
+        });
+      }
+      if (e.key === '2') {
+        handleUICommand("UPDATE_PLAYER_READY", { connected_id: "PLAYER_1" });
+        handleUICommand("UPDATE_PLAYER_READY", { connected_id: "PLAYER_2" });
+      }
+      if (e.key === '3') handleUICommand("SHOW_CALIBRATION_UI");
+      if (e.key === '4') {
+        calibrateZeroPoint();
+        handleUICommand("START_MAIN_GAME");
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      pressedKeys[e.key] = false;
+      if (e.key === 'd' || e.key === 'D') setGuardState(false);
+      if (e.key === 's' || e.key === 'S') triggerChargeAction(false);
+    });
+
+    window.addEventListener('resize', () => {
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
